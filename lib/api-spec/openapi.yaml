@@ -1,22 +1,37 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: BioForge Unified Bioinformatics Platform API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: genomics
+    description: Variant analysis and genomics
+  - name: protein
+    description: Protein structure and annotations
+  - name: crispr
+    description: CRISPR guide RNA design
+  - name: nlp
+    description: Biomedical NLP and entity extraction
+  - name: genome-browser
+    description: Genomic visualization and browser
+  - name: lims
+    description: Lab Information Management System
+  - name: drugs
+    description: Drug discovery and compound search
+  - name: transcriptomics
+    description: RNA-Seq and expression analysis
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +39,768 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── Genomics Module ─────────────────────────────────────────────────────────
+  /genomics/variants:
+    get:
+      operationId: listVariants
+      tags: [genomics]
+      summary: List all parsed variants
+      parameters:
+        - name: jobId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: chromosome
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: significance
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: List of variants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VariantListResponse"
+
+  /genomics/variants/upload:
+    post:
+      operationId: uploadVcf
+      tags: [genomics]
+      summary: Upload and parse a VCF file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadVcfBody"
+      responses:
+        "200":
+          description: Parse job started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenomicsJob"
+
+  /genomics/variants/{variantId}/annotate:
+    get:
+      operationId: annotateVariant
+      tags: [genomics]
+      summary: Fetch annotations for a single variant from Ensembl/ClinVar
+      parameters:
+        - name: variantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Annotated variant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnnotatedVariant"
+
+  /genomics/stats:
+    get:
+      operationId: getGenomicsStats
+      tags: [genomics]
+      summary: Aggregated variant statistics
+      parameters:
+        - name: jobId
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Variant statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenomicsStats"
+
+  /genomics/jobs:
+    get:
+      operationId: listGenomicsJobs
+      tags: [genomics]
+      summary: List all genomics analysis jobs
+      responses:
+        "200":
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenomicsJobList"
+
+  # ── Protein Structure Module ─────────────────────────────────────────────────
+  /protein/search:
+    get:
+      operationId: searchProteins
+      tags: [protein]
+      summary: Search proteins by name, gene, or organism via RCSB PDB
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProteinSearchResponse"
+
+  /protein/{pdbId}/structure:
+    get:
+      operationId: getProteinStructure
+      tags: [protein]
+      summary: Get PDB structure metadata and download URL
+      parameters:
+        - name: pdbId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Protein structure data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProteinStructure"
+
+  /protein/{pdbId}/annotations:
+    get:
+      operationId: getProteinAnnotations
+      tags: [protein]
+      summary: Get UniProt annotations for a protein
+      parameters:
+        - name: pdbId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Protein annotations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProteinAnnotations"
+
+  /protein/featured:
+    get:
+      operationId: getFeaturedProteins
+      tags: [protein]
+      summary: Get curated list of featured proteins for exploration
+      responses:
+        "200":
+          description: Featured proteins
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProteinSearchResponse"
+
+  # ── CRISPR Design Module ──────────────────────────────────────────────────────
+  /crispr/design:
+    post:
+      operationId: designGuideRnas
+      tags: [crispr]
+      summary: Design gRNA candidates for a given DNA sequence or gene
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CrisprDesignBody"
+      responses:
+        "200":
+          description: Designed guide RNAs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrisprDesignResult"
+
+  /crispr/gene/{geneName}/sequence:
+    get:
+      operationId: getGeneSequence
+      tags: [crispr]
+      summary: Fetch gene sequence from Ensembl for CRISPR design
+      parameters:
+        - name: geneName
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: species
+          in: query
+          required: false
+          schema:
+            type: string
+            default: human
+      responses:
+        "200":
+          description: Gene sequence
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneSequence"
+
+  /crispr/jobs:
+    get:
+      operationId: listCrisprJobs
+      tags: [crispr]
+      summary: List recent CRISPR design jobs
+      responses:
+        "200":
+          description: List of CRISPR jobs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrisprJobList"
+
+  # ── Biomedical NLP Module ─────────────────────────────────────────────────────
+  /nlp/extract:
+    post:
+      operationId: extractBiomedicalEntities
+      tags: [nlp]
+      summary: Extract biomedical entities from text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NlpExtractBody"
+      responses:
+        "200":
+          description: Extracted entities and relations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NlpExtractResult"
+
+  /nlp/papers/search:
+    get:
+      operationId: searchPubmedPapers
+      tags: [nlp]
+      summary: Search PubMed for open-access papers
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Papers list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PubmedSearchResponse"
+
+  /nlp/knowledge-graph:
+    get:
+      operationId: getKnowledgeGraph
+      tags: [nlp]
+      summary: Get the current knowledge graph of entities and relationships
+      parameters:
+        - name: entityType
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Knowledge graph data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeGraph"
+
+  # ── Genome Browser Module ──────────────────────────────────────────────────
+  /genome/search:
+    get:
+      operationId: searchGenomicRegion
+      tags: [genome-browser]
+      summary: Search for genes or features in the genome
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: species
+          in: query
+          required: false
+          schema:
+            type: string
+            default: human
+      responses:
+        "200":
+          description: Genomic features
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenomicSearchResponse"
+
+  /genome/region:
+    get:
+      operationId: getGenomicRegion
+      tags: [genome-browser]
+      summary: Get features and variants in a genomic region
+      parameters:
+        - name: chromosome
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: start
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: end
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: species
+          in: query
+          required: false
+          schema:
+            type: string
+            default: human
+      responses:
+        "200":
+          description: Region data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenomicRegionData"
+
+  /genome/tracks:
+    get:
+      operationId: listGenomeTracks
+      tags: [genome-browser]
+      summary: List available genome annotation tracks
+      responses:
+        "200":
+          description: Available tracks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenomeTracksResponse"
+
+  # ── LIMS Module ─────────────────────────────────────────────────────────────
+  /lims/samples:
+    get:
+      operationId: listSamples
+      tags: [lims]
+      summary: List all biological samples
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Samples list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SampleListResponse"
+    post:
+      operationId: createSample
+      tags: [lims]
+      summary: Create a new biological sample
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSampleBody"
+      responses:
+        "201":
+          description: Created sample
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Sample"
+
+  /lims/samples/{sampleId}:
+    get:
+      operationId: getSample
+      tags: [lims]
+      summary: Get a single sample
+      parameters:
+        - name: sampleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sample detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Sample"
+    patch:
+      operationId: updateSample
+      tags: [lims]
+      summary: Update a sample
+      parameters:
+        - name: sampleId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSampleBody"
+      responses:
+        "200":
+          description: Updated sample
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Sample"
+    delete:
+      operationId: deleteSample
+      tags: [lims]
+      summary: Delete a sample
+      parameters:
+        - name: sampleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /lims/experiments:
+    get:
+      operationId: listExperiments
+      tags: [lims]
+      summary: List all experiments
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Experiments list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperimentListResponse"
+    post:
+      operationId: createExperiment
+      tags: [lims]
+      summary: Create a new experiment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateExperimentBody"
+      responses:
+        "201":
+          description: Created experiment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Experiment"
+
+  /lims/experiments/{experimentId}:
+    get:
+      operationId: getExperiment
+      tags: [lims]
+      summary: Get a single experiment
+      parameters:
+        - name: experimentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Experiment detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Experiment"
+    patch:
+      operationId: updateExperiment
+      tags: [lims]
+      summary: Update an experiment
+      parameters:
+        - name: experimentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateExperimentBody"
+      responses:
+        "200":
+          description: Updated experiment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Experiment"
+
+  /lims/stats:
+    get:
+      operationId: getLimsStats
+      tags: [lims]
+      summary: LIMS dashboard statistics
+      responses:
+        "200":
+          description: LIMS stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LimsStats"
+
+  # ── Drug Discovery Module ─────────────────────────────────────────────────────
+  /drugs/search:
+    get:
+      operationId: searchCompounds
+      tags: [drugs]
+      summary: Search drug compounds from ChEMBL
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Compound search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompoundSearchResponse"
+
+  /drugs/{chemblId}:
+    get:
+      operationId: getCompound
+      tags: [drugs]
+      summary: Get detailed compound information from ChEMBL
+      parameters:
+        - name: chemblId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Compound detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Compound"
+
+  /drugs/{chemblId}/activities:
+    get:
+      operationId: getCompoundActivities
+      tags: [drugs]
+      summary: Get bioactivity data for a compound
+      parameters:
+        - name: chemblId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Bioactivity data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompoundActivitiesResponse"
+
+  /drugs/targets/search:
+    get:
+      operationId: searchTargets
+      tags: [drugs]
+      summary: Search drug targets from ChEMBL
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Target search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TargetSearchResponse"
+
+  /drugs/dashboard/stats:
+    get:
+      operationId: getDrugDashboardStats
+      tags: [drugs]
+      summary: Drug discovery dashboard statistics
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DrugDashboardStats"
+
+  # ── Transcriptomics Module ────────────────────────────────────────────────────
+  /transcriptomics/expression/search:
+    get:
+      operationId: searchGeneExpression
+      tags: [transcriptomics]
+      summary: Search gene expression data from GTEx/Ensembl
+      parameters:
+        - name: gene
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: tissue
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Expression data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExpressionSearchResponse"
+
+  /transcriptomics/jobs:
+    get:
+      operationId: listTranscriptomicsJobs
+      tags: [transcriptomics]
+      summary: List RNA-Seq analysis jobs
+      responses:
+        "200":
+          description: Jobs list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptomicsJobList"
+    post:
+      operationId: createTranscriptomicsJob
+      tags: [transcriptomics]
+      summary: Create an RNA-Seq analysis job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTranscriptomicsJobBody"
+      responses:
+        "201":
+          description: Created job
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranscriptomicsJob"
+
+  /transcriptomics/tissues:
+    get:
+      operationId: listTissues
+      tags: [transcriptomics]
+      summary: List available tissue types for expression comparison
+      responses:
+        "200":
+          description: Available tissues
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TissueListResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +808,1098 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    # ── Genomics Schemas ───────────────────────────────────────────────────────
+    Variant:
+      type: object
+      properties:
+        id:
+          type: string
+        chromosome:
+          type: string
+        position:
+          type: integer
+        ref:
+          type: string
+        alt:
+          type: string
+        quality:
+          type: number
+        filter:
+          type: string
+        rsId:
+          type: string
+        gene:
+          type: string
+        consequence:
+          type: string
+        significance:
+          type: string
+        alleleFrequency:
+          type: number
+        jobId:
+          type: string
+        createdAt:
+          type: string
+      required: [id, chromosome, position, ref, alt, jobId]
+
+    AnnotatedVariant:
+      type: object
+      properties:
+        variant:
+          $ref: "#/components/schemas/Variant"
+        ensemblAnnotation:
+          type: object
+          additionalProperties: true
+        clinvarAnnotation:
+          type: object
+          additionalProperties: true
+        dbsnpAnnotation:
+          type: object
+          additionalProperties: true
+      required: [variant]
+
+    VariantListResponse:
+      type: object
+      properties:
+        variants:
+          type: array
+          items:
+            $ref: "#/components/schemas/Variant"
+        total:
+          type: integer
+        chromosomeCounts:
+          type: object
+          additionalProperties:
+            type: integer
+      required: [variants, total]
+
+    GenomicsJob:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+        filename:
+          type: string
+        variantCount:
+          type: integer
+        createdAt:
+          type: string
+        completedAt:
+          type: string
+      required: [id, status, filename, createdAt]
+
+    GenomicsJobList:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenomicsJob"
+      required: [jobs]
+
+    UploadVcfBody:
+      type: object
+      properties:
+        filename:
+          type: string
+        content:
+          type: string
+          description: VCF file content as string
+      required: [filename, content]
+
+    GenomicsStats:
+      type: object
+      properties:
+        totalVariants:
+          type: integer
+        byChromosome:
+          type: array
+          items:
+            type: object
+            properties:
+              chromosome:
+                type: string
+              count:
+                type: integer
+            required: [chromosome, count]
+        bySignificance:
+          type: array
+          items:
+            type: object
+            properties:
+              significance:
+                type: string
+              count:
+                type: integer
+            required: [significance, count]
+        byConsequence:
+          type: array
+          items:
+            type: object
+            properties:
+              consequence:
+                type: string
+              count:
+                type: integer
+            required: [consequence, count]
+        recentJobs:
+          type: integer
+      required: [totalVariants, byChromosome, bySignificance, byConsequence, recentJobs]
+
+    # ── Protein Schemas ────────────────────────────────────────────────────────
+    ProteinEntry:
+      type: object
+      properties:
+        pdbId:
+          type: string
+        title:
+          type: string
+        organism:
+          type: string
+        resolution:
+          type: number
+        method:
+          type: string
+        depositionDate:
+          type: string
+        chains:
+          type: integer
+        atoms:
+          type: integer
+        ligands:
+          type: array
+          items:
+            type: string
+        uniprotId:
+          type: string
+        gene:
+          type: string
+      required: [pdbId, title]
+
+    ProteinSearchResponse:
+      type: object
+      properties:
+        proteins:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProteinEntry"
+        total:
+          type: integer
+      required: [proteins, total]
+
+    ProteinStructure:
+      type: object
+      properties:
+        pdbId:
+          type: string
+        title:
+          type: string
+        downloadUrl:
+          type: string
+        cifUrl:
+          type: string
+        organism:
+          type: string
+        resolution:
+          type: number
+        method:
+          type: string
+        chains:
+          type: array
+          items:
+            type: object
+            properties:
+              chainId:
+                type: string
+              sequence:
+                type: string
+              length:
+                type: integer
+            required: [chainId, length]
+        secondaryStructure:
+          type: object
+          properties:
+            helices:
+              type: integer
+            sheets:
+              type: integer
+          required: [helices, sheets]
+        bindingSites:
+          type: array
+          items:
+            type: object
+            properties:
+              siteId:
+                type: string
+              residues:
+                type: array
+                items:
+                  type: string
+              ligand:
+                type: string
+            required: [siteId, residues]
+      required: [pdbId, title, downloadUrl, cifUrl]
+
+    ProteinAnnotations:
+      type: object
+      properties:
+        pdbId:
+          type: string
+        uniprotId:
+          type: string
+        function:
+          type: string
+        gene:
+          type: string
+        organism:
+          type: string
+        subcellularLocation:
+          type: array
+          items:
+            type: string
+        goTerms:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              term:
+                type: string
+              category:
+                type: string
+            required: [id, term, category]
+        diseases:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              description:
+                type: string
+            required: [name]
+        ptms:
+          type: array
+          items:
+            type: string
+      required: [pdbId]
+
+    # ── CRISPR Schemas ─────────────────────────────────────────────────────────
+    GuideRNA:
+      type: object
+      properties:
+        id:
+          type: string
+        sequence:
+          type: string
+        pamSequence:
+          type: string
+        position:
+          type: integer
+        strand:
+          type: string
+          enum: ["+", "-"]
+        score:
+          type: number
+        gcContent:
+          type: number
+        offTargetScore:
+          type: number
+        selfComplementarity:
+          type: number
+        rank:
+          type: integer
+      required: [id, sequence, pamSequence, position, strand, score, rank]
+
+    CrisprDesignBody:
+      type: object
+      properties:
+        sequence:
+          type: string
+        geneName:
+          type: string
+        pam:
+          type: string
+          default: NGG
+        guideLength:
+          type: integer
+          default: 20
+        maxOffTargets:
+          type: integer
+          default: 5
+        species:
+          type: string
+          default: human
+      required: []
+
+    CrisprDesignResult:
+      type: object
+      properties:
+        jobId:
+          type: string
+        geneName:
+          type: string
+        totalCandidates:
+          type: integer
+        guides:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuideRNA"
+        sequenceLength:
+          type: integer
+        pamType:
+          type: string
+      required: [jobId, totalCandidates, guides]
+
+    GeneSequence:
+      type: object
+      properties:
+        geneName:
+          type: string
+        ensemblId:
+          type: string
+        chromosome:
+          type: string
+        start:
+          type: integer
+        end:
+          type: integer
+        strand:
+          type: integer
+        sequence:
+          type: string
+        length:
+          type: integer
+      required: [geneName, sequence, length]
+
+    CrisprJob:
+      type: object
+      properties:
+        id:
+          type: string
+        geneName:
+          type: string
+        status:
+          type: string
+        guidesCount:
+          type: integer
+        createdAt:
+          type: string
+      required: [id, status, createdAt]
+
+    CrisprJobList:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/CrisprJob"
+      required: [jobs]
+
+    # ── NLP Schemas ────────────────────────────────────────────────────────────
+    BioEntity:
+      type: object
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        type:
+          type: string
+          enum: [gene, disease, drug, protein, organism, mutation, pathway]
+        normalizedId:
+          type: string
+        confidence:
+          type: number
+        startOffset:
+          type: integer
+        endOffset:
+          type: integer
+      required: [id, text, type, confidence]
+
+    EntityRelation:
+      type: object
+      properties:
+        subject:
+          type: string
+        predicate:
+          type: string
+        object:
+          type: string
+        confidence:
+          type: number
+        evidence:
+          type: string
+      required: [subject, predicate, object, confidence]
+
+    NlpExtractBody:
+      type: object
+      properties:
+        text:
+          type: string
+        pmid:
+          type: string
+      required: []
+
+    NlpExtractResult:
+      type: object
+      properties:
+        entities:
+          type: array
+          items:
+            $ref: "#/components/schemas/BioEntity"
+        relations:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntityRelation"
+        text:
+          type: string
+        entityCounts:
+          type: object
+          additionalProperties:
+            type: integer
+      required: [entities, relations, text]
+
+    PubmedPaper:
+      type: object
+      properties:
+        pmid:
+          type: string
+        title:
+          type: string
+        abstract:
+          type: string
+        authors:
+          type: array
+          items:
+            type: string
+        journal:
+          type: string
+        year:
+          type: integer
+        doi:
+          type: string
+        keywords:
+          type: array
+          items:
+            type: string
+      required: [pmid, title]
+
+    PubmedSearchResponse:
+      type: object
+      properties:
+        papers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PubmedPaper"
+        total:
+          type: integer
+        query:
+          type: string
+      required: [papers, total, query]
+
+    KnowledgeGraphNode:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        type:
+          type: string
+        count:
+          type: integer
+      required: [id, label, type]
+
+    KnowledgeGraphEdge:
+      type: object
+      properties:
+        source:
+          type: string
+        target:
+          type: string
+        relation:
+          type: string
+        confidence:
+          type: number
+      required: [source, target, relation, confidence]
+
+    KnowledgeGraph:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/KnowledgeGraphNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/KnowledgeGraphEdge"
+        totalDocuments:
+          type: integer
+      required: [nodes, edges, totalDocuments]
+
+    # ── Genome Browser Schemas ─────────────────────────────────────────────────
+    GenomicFeature:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        chromosome:
+          type: string
+        start:
+          type: integer
+        end:
+          type: integer
+        strand:
+          type: integer
+        biotype:
+          type: string
+        description:
+          type: string
+      required: [id, name, type, chromosome, start, end]
+
+    GenomicSearchResponse:
+      type: object
+      properties:
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenomicFeature"
+        total:
+          type: integer
+      required: [features, total]
+
+    GenomicRegionData:
+      type: object
+      properties:
+        chromosome:
+          type: string
+        start:
+          type: integer
+        end:
+          type: integer
+        genes:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenomicFeature"
+        variants:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              position:
+                type: integer
+              ref:
+                type: string
+              alt:
+                type: string
+              consequence:
+                type: string
+            required: [id, position, ref, alt]
+        coverageData:
+          type: array
+          items:
+            type: object
+            properties:
+              position:
+                type: integer
+              coverage:
+                type: number
+            required: [position, coverage]
+      required: [chromosome, start, end, genes, variants]
+
+    GenomeTrack:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        source:
+          type: string
+        description:
+          type: string
+      required: [id, name, type, source]
+
+    GenomeTracksResponse:
+      type: object
+      properties:
+        tracks:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenomeTrack"
+      required: [tracks]
+
+    # ── LIMS Schemas ───────────────────────────────────────────────────────────
+    Sample:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [dna, rna, protein, tissue, cell_line, blood, other]
+        status:
+          type: string
+          enum: [active, depleted, archived, quarantine]
+        concentration:
+          type: number
+        unit:
+          type: string
+        volume:
+          type: number
+        organism:
+          type: string
+        tissue:
+          type: string
+        storageLocation:
+          type: string
+        barcode:
+          type: string
+        notes:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, name, type, status, createdAt]
+
+    SampleListResponse:
+      type: object
+      properties:
+        samples:
+          type: array
+          items:
+            $ref: "#/components/schemas/Sample"
+        total:
+          type: integer
+      required: [samples, total]
+
+    CreateSampleBody:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [dna, rna, protein, tissue, cell_line, blood, other]
+        concentration:
+          type: number
+        unit:
+          type: string
+        volume:
+          type: number
+        organism:
+          type: string
+        tissue:
+          type: string
+        storageLocation:
+          type: string
+        notes:
+          type: string
+      required: [name, type]
+
+    UpdateSampleBody:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, depleted, archived, quarantine]
+        concentration:
+          type: number
+        volume:
+          type: number
+        storageLocation:
+          type: string
+        notes:
+          type: string
+
+    Experiment:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [pcr, sequencing, western_blot, elisa, flow_cytometry, microscopy, other]
+        status:
+          type: string
+          enum: [planned, running, completed, failed, cancelled]
+        sampleIds:
+          type: array
+          items:
+            type: string
+        protocol:
+          type: string
+        notes:
+          type: string
+        startedAt:
+          type: string
+        completedAt:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, name, type, status, createdAt]
+
+    ExperimentListResponse:
+      type: object
+      properties:
+        experiments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Experiment"
+        total:
+          type: integer
+      required: [experiments, total]
+
+    CreateExperimentBody:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [pcr, sequencing, western_blot, elisa, flow_cytometry, microscopy, other]
+        sampleIds:
+          type: array
+          items:
+            type: string
+        protocol:
+          type: string
+        notes:
+          type: string
+      required: [name, type]
+
+    UpdateExperimentBody:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [planned, running, completed, failed, cancelled]
+        protocol:
+          type: string
+        notes:
+          type: string
+        completedAt:
+          type: string
+
+    LimsStats:
+      type: object
+      properties:
+        totalSamples:
+          type: integer
+        activeSamples:
+          type: integer
+        totalExperiments:
+          type: integer
+        runningExperiments:
+          type: integer
+        samplesByType:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              count:
+                type: integer
+            required: [type, count]
+        experimentsByStatus:
+          type: array
+          items:
+            type: object
+            properties:
+              status:
+                type: string
+              count:
+                type: integer
+            required: [status, count]
+        recentActivity:
+          type: array
+          items:
+            type: object
+            properties:
+              action:
+                type: string
+              entityType:
+                type: string
+              entityName:
+                type: string
+              timestamp:
+                type: string
+            required: [action, entityType, entityName, timestamp]
+      required: [totalSamples, activeSamples, totalExperiments, runningExperiments, samplesByType, experimentsByStatus, recentActivity]
+
+    # ── Drug Discovery Schemas ─────────────────────────────────────────────────
+    Compound:
+      type: object
+      properties:
+        chemblId:
+          type: string
+        name:
+          type: string
+        synonyms:
+          type: array
+          items:
+            type: string
+        smiles:
+          type: string
+        inchi:
+          type: string
+        molecularFormula:
+          type: string
+        molecularWeight:
+          type: number
+        alogp:
+          type: number
+        hbondDonors:
+          type: integer
+        hbondAcceptors:
+          type: integer
+        rotatableBonds:
+          type: integer
+        aromaticRings:
+          type: integer
+        qedScore:
+          type: number
+        maxPhase:
+          type: integer
+        indication:
+          type: string
+        atcClass:
+          type: string
+      required: [chemblId, name]
+
+    CompoundSearchResponse:
+      type: object
+      properties:
+        compounds:
+          type: array
+          items:
+            $ref: "#/components/schemas/Compound"
+        total:
+          type: integer
+        query:
+          type: string
+      required: [compounds, total, query]
+
+    CompoundActivity:
+      type: object
+      properties:
+        activityId:
+          type: string
+        targetName:
+          type: string
+        targetChemblId:
+          type: string
+        standardType:
+          type: string
+        standardValue:
+          type: number
+        standardUnits:
+          type: string
+        relation:
+          type: string
+        assayType:
+          type: string
+        pchembl:
+          type: number
+      required: [activityId, targetName, standardType]
+
+    CompoundActivitiesResponse:
+      type: object
+      properties:
+        chemblId:
+          type: string
+        activities:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompoundActivity"
+        total:
+          type: integer
+      required: [chemblId, activities, total]
+
+    DrugTarget:
+      type: object
+      properties:
+        targetChemblId:
+          type: string
+        targetName:
+          type: string
+        targetType:
+          type: string
+        organism:
+          type: string
+        geneNames:
+          type: array
+          items:
+            type: string
+        uniprotId:
+          type: string
+      required: [targetChemblId, targetName]
+
+    TargetSearchResponse:
+      type: object
+      properties:
+        targets:
+          type: array
+          items:
+            $ref: "#/components/schemas/DrugTarget"
+        total:
+          type: integer
+      required: [targets, total]
+
+    DrugDashboardStats:
+      type: object
+      properties:
+        totalCompoundsSearched:
+          type: integer
+        approvedDrugs:
+          type: integer
+        uniqueTargets:
+          type: integer
+        recentSearches:
+          type: array
+          items:
+            type: object
+            properties:
+              query:
+                type: string
+              timestamp:
+                type: string
+              results:
+                type: integer
+            required: [query, timestamp, results]
+        topIndications:
+          type: array
+          items:
+            type: object
+            properties:
+              indication:
+                type: string
+              count:
+                type: integer
+            required: [indication, count]
+      required: [totalCompoundsSearched, approvedDrugs, uniqueTargets, recentSearches, topIndications]
+
+    # ── Transcriptomics Schemas ────────────────────────────────────────────────
+    GeneExpressionEntry:
+      type: object
+      properties:
+        geneId:
+          type: string
+        geneName:
+          type: string
+        tissue:
+          type: string
+        tpm:
+          type: number
+        median:
+          type: number
+        unit:
+          type: string
+      required: [geneId, geneName, tissue, tpm]
+
+    ExpressionSearchResponse:
+      type: object
+      properties:
+        gene:
+          type: string
+        expressions:
+          type: array
+          items:
+            $ref: "#/components/schemas/GeneExpressionEntry"
+        tissues:
+          type: array
+          items:
+            type: string
+        maxTpm:
+          type: number
+      required: [gene, expressions, tissues]
+
+    TranscriptomicsJob:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [pending, aligning, quantifying, analyzing, completed, failed]
+        sampleType:
+          type: string
+        readsCount:
+          type: integer
+        genesDetected:
+          type: integer
+        createdAt:
+          type: string
+        completedAt:
+          type: string
+      required: [id, name, status, createdAt]
+
+    TranscriptomicsJobList:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/TranscriptomicsJob"
+      required: [jobs]
+
+    CreateTranscriptomicsJobBody:
+      type: object
+      properties:
+        name:
+          type: string
+        sampleType:
+          type: string
+        pairedEnd:
+          type: boolean
+        referenceGenome:
+          type: string
+          default: GRCh38
+      required: [name, sampleType]
+
+    TissueListResponse:
+      type: object
+      properties:
+        tissues:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              sampleCount:
+                type: integer
+            required: [id, name]
+      required: [tissues]
