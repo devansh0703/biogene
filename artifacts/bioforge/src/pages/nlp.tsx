@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useEffect, Component, type ReactNode } from "react";
 import {
   useExtractBiomedicalEntities, useSearchPubmedPapers, useGetKnowledgeGraph,
 } from "@workspace/api-client-react";
@@ -10,6 +10,29 @@ import { Badge } from "@/components/ui/badge";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
+
+function supportsWebGL(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    return !!(
+      canvas.getContext("webgl") ?? canvas.getContext("experimental-webgl")
+    );
+  } catch {
+    return false;
+  }
+}
+
+class WebGLErrorBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode; fallback: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  render() {
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
+}
 
 const ENTITY_COLORS: Record<string, string> = {
   gene: "#ffffff",
@@ -40,10 +63,10 @@ function KnowledgeGraph3D({ nodes, edges }: { nodes: KnowledgeGraphNode[]; edges
     const map: Record<string, [number, number, number]> = {};
     nodes.forEach((n, i) => {
       const angle = (i / nodes.length) * Math.PI * 2;
-      const r = 4 + Math.random() * 3;
+      const r = 4 + (i % 3) * 1.5;
       map[n.label.toLowerCase()] = [
         Math.cos(angle) * r,
-        (Math.random() - 0.5) * 4,
+        ((i % 5) - 2) * 0.8,
         Math.sin(angle) * r,
       ];
     });
@@ -116,12 +139,16 @@ interface ExtractResult {
   entityCounts?: Record<string, number>;
 }
 
+const DEFAULT_PMID = "33845124";
+const DEFAULT_PAPER_QUERY = "BRCA1 cancer therapy";
+
 export default function Nlp() {
   const [text, setText] = useState("");
-  const [pmid, setPmid] = useState("");
-  const [paperQuery, setPaperQuery] = useState("");
-  const [paperSearchTerm, setPaperSearchTerm] = useState("");
+  const [pmid, setPmid] = useState(DEFAULT_PMID);
+  const [paperQuery, setPaperQuery] = useState(DEFAULT_PAPER_QUERY);
+  const [paperSearchTerm, setPaperSearchTerm] = useState(DEFAULT_PAPER_QUERY);
   const [extractResult, setExtractResult] = useState<ExtractResult | null>(null);
+  const [autoExtracted, setAutoExtracted] = useState(false);
 
   const extractMutation = useExtractBiomedicalEntities();
   const { data: papersData, isLoading: papersLoading } = useSearchPubmedPapers(
@@ -129,6 +156,15 @@ export default function Nlp() {
     { query: { enabled: !!paperSearchTerm } }
   );
   const { data: graphData, isLoading: graphLoading } = useGetKnowledgeGraph({});
+
+  useEffect(() => {
+    if (autoExtracted) return;
+    setAutoExtracted(true);
+    extractMutation.mutate(
+      { data: { pmid: DEFAULT_PMID } },
+      { onSuccess: (data) => setExtractResult(data as ExtractResult) }
+    );
+  }, []);
 
   const handleExtract = () => {
     extractMutation.mutate(
@@ -165,54 +201,48 @@ export default function Nlp() {
                 value={pmid}
                 onChange={(e) => setPmid(e.target.value)}
                 className="rounded-none font-mono text-sm bg-black border-border"
-                data-testid="pmid-input"
               />
               <Button
                 onClick={handleExtract}
                 disabled={(!text && !pmid) || extractMutation.isPending}
                 className="rounded-none uppercase text-xs"
-                data-testid="extract-btn"
               >
                 {extractMutation.isPending ? "Extracting..." : "Extract"}
               </Button>
             </div>
             <textarea
-              placeholder="Or paste biomedical text here (abstracts, clinical notes, research papers)..."
+              placeholder="Or paste biomedical text here..."
               value={text}
               onChange={(e) => setText(e.target.value)}
               rows={7}
               className="w-full rounded-none font-mono text-xs bg-black border border-border text-white p-2 resize-none focus:outline-none focus:ring-1 focus:ring-white"
-              data-testid="nlp-text-input"
             />
           </CardContent>
         </Card>
 
         <Card className="rounded-none border-border bg-card">
           <CardHeader>
-            <div className="flex gap-2 items-center justify-between">
-              <CardTitle className="text-sm uppercase">PubMed Search</CardTitle>
-            </div>
+            <CardTitle className="text-sm uppercase">PubMed Search</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex gap-2">
               <Input
-                placeholder="Search PubMed (e.g. BRCA1 cancer therapy)..."
+                placeholder="Search PubMed..."
                 value={paperQuery}
                 onChange={(e) => setPaperQuery(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") setPaperSearchTerm(paperQuery); }}
                 className="rounded-none font-mono text-sm bg-black border-border flex-1"
-                data-testid="paper-search-input"
               />
               <Button
                 onClick={() => setPaperSearchTerm(paperQuery)}
                 disabled={!paperQuery || papersLoading}
                 className="rounded-none uppercase text-xs"
-                data-testid="paper-search-btn"
               >
                 {papersLoading ? "..." : "Search"}
               </Button>
             </div>
             <div className="space-y-2 max-h-56 overflow-auto">
+              {papersLoading && <Skeleton className="h-32 rounded-none" />}
               {(papersData?.papers ?? []).length === 0 && paperSearchTerm && !papersLoading && (
                 <p className="text-xs text-muted-foreground font-mono">No papers found.</p>
               )}
@@ -221,7 +251,6 @@ export default function Nlp() {
                   key={p.pmid}
                   className="border-b border-border py-2 cursor-pointer hover:bg-white/5"
                   onClick={() => { setPmid(p.pmid); setText(""); }}
-                  data-testid="paper-item"
                 >
                   <p className="text-xs font-mono font-bold truncate">{p.title}</p>
                   <div className="flex gap-2 mt-0.5">
@@ -235,6 +264,10 @@ export default function Nlp() {
           </CardContent>
         </Card>
       </div>
+
+      {extractMutation.isPending && !extractResult && (
+        <Skeleton className="h-48 rounded-none" />
+      )}
 
       {extractResult && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -299,7 +332,7 @@ export default function Nlp() {
             <span>Knowledge Graph — 3D View</span>
             {graphData && (
               <span className="text-xs text-muted-foreground font-mono">
-                {graphData.nodes?.length ?? 0} nodes, {graphData.edges?.length ?? 0} edges
+                {(graphData as { nodes?: unknown[] }).nodes?.length ?? 0} nodes, {(graphData as { edges?: unknown[] }).edges?.length ?? 0} edges
               </span>
             )}
           </CardTitle>
@@ -307,21 +340,54 @@ export default function Nlp() {
         <CardContent className="p-0">
           {graphLoading ? (
             <Skeleton className="h-96 rounded-none" />
-          ) : graphData && (graphData.nodes ?? []).length > 0 ? (
-            <div className="h-96 bg-black">
-              <Canvas camera={{ position: [0, 0, 12], fov: 60 }}>
-                <KnowledgeGraph3D
-                  nodes={(graphData.nodes ?? []).map((n) => ({ ...n, position: [0, 0, 0] })) as KnowledgeGraphNode[]}
-                  edges={(graphData.edges ?? []) as KnowledgeGraphEdge[]}
-                />
-              </Canvas>
-            </div>
+          ) : graphData && ((graphData as { nodes?: unknown[] }).nodes ?? []).length > 0 ? (
+            supportsWebGL() ? (
+              <WebGLErrorBoundary fallback={
+                <div className="h-96 overflow-auto p-4 bg-black/50">
+                  <p className="text-xs font-mono text-muted-foreground uppercase mb-3">Knowledge Graph — Node List</p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {((graphData as { nodes?: unknown[] }).nodes ?? []).slice(0, 40).map((n) => {
+                      const node = n as { id: string; label: string; type: string; count?: number };
+                      return (
+                        <div key={node.id} className="flex items-center justify-between border border-border p-1 font-mono text-xs">
+                          <span className="text-white truncate">{node.label}</span>
+                          <span className="text-muted-foreground ml-2 shrink-0">{node.type}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              }>
+                <div className="h-96 bg-black">
+                  <Canvas camera={{ position: [0, 0, 12], fov: 60 }}>
+                    <KnowledgeGraph3D
+                      nodes={((graphData as { nodes?: unknown[] }).nodes ?? []).map((n) => ({ ...(n as object), position: [0, 0, 0] })) as KnowledgeGraphNode[]}
+                      edges={((graphData as { edges?: unknown[] }).edges ?? []) as KnowledgeGraphEdge[]}
+                    />
+                  </Canvas>
+                </div>
+              </WebGLErrorBoundary>
+            ) : (
+              <div className="h-96 overflow-auto p-4 bg-black/50">
+                <p className="text-xs font-mono text-muted-foreground uppercase mb-3">Knowledge Graph — Node List</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {((graphData as { nodes?: unknown[] }).nodes ?? []).slice(0, 40).map((n) => {
+                    const node = n as { id: string; label: string; type: string; count?: number };
+                    return (
+                      <div key={node.id} className="flex items-center justify-between border border-border p-1 font-mono text-xs">
+                        <span className="text-white truncate">{node.label}</span>
+                        <span className="text-muted-foreground ml-2 shrink-0">{node.type}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )
           ) : (
             <div className="h-96 flex items-center justify-center bg-black/50">
-              <div className="text-center space-y-2">
-                <p className="text-xs font-mono text-muted-foreground uppercase">No graph data yet</p>
-                <p className="text-xs text-muted-foreground">Extract entities from biomedical text to populate the knowledge graph</p>
-              </div>
+              <p className="text-xs font-mono text-muted-foreground uppercase">
+                {graphLoading ? "Loading graph..." : "Extract entities to populate the knowledge graph"}
+              </p>
             </div>
           )}
         </CardContent>

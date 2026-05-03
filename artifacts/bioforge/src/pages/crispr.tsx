@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useDesignGuideRnas, useListCrisprJobs, useGetGeneSequence } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,15 +28,18 @@ interface DesignResult {
   pamType: string;
 }
 
+const DEFAULT_GENE = "BRCA1";
+
 export default function Crispr() {
   const [mode, setMode] = useState<"gene" | "sequence">("gene");
-  const [geneName, setGeneName] = useState("");
+  const [geneName, setGeneName] = useState(DEFAULT_GENE);
   const [sequence, setSequence] = useState("");
   const [pam, setPam] = useState("NGG");
   const [species, setSpecies] = useState("human");
   const [guideLength, setGuideLength] = useState(20);
   const [result, setResult] = useState<DesignResult | null>(null);
   const [loadingSeq, setLoadingSeq] = useState(false);
+  const [autoDesigned, setAutoDesigned] = useState(false);
 
   const designMutation = useDesignGuideRnas();
   const { data: jobsData } = useListCrisprJobs();
@@ -46,11 +49,22 @@ export default function Crispr() {
     { query: { enabled: false } }
   );
 
+  useEffect(() => {
+    if (autoDesigned) return;
+    setAutoDesigned(true);
+    designMutation.mutate(
+      { data: { geneName: DEFAULT_GENE, pam: "NGG", guideLength: 20, species: "human" } },
+      { onSuccess: (data) => setResult(data as DesignResult) }
+    );
+  }, []);
+
   const handleFetchSequence = async () => {
     if (!geneName) return;
     setLoadingSeq(true);
     const res = await fetchSeq();
-    if (res.data?.sequence) setSequence(res.data.sequence.slice(0, 5000));
+    if ((res.data as { sequence?: string } | undefined)?.sequence) {
+      setSequence(((res.data as { sequence: string }).sequence).slice(0, 5000));
+    }
     setLoadingSeq(false);
   };
 
@@ -88,14 +102,12 @@ export default function Crispr() {
               <button
                 onClick={() => setMode("gene")}
                 className={`flex-1 py-2 text-xs uppercase font-mono transition-colors ${mode === "gene" ? "bg-white text-black" : "text-muted-foreground hover:text-white"}`}
-                data-testid="mode-gene"
               >
                 Gene Name
               </button>
               <button
                 onClick={() => setMode("sequence")}
                 className={`flex-1 py-2 text-xs uppercase font-mono transition-colors ${mode === "sequence" ? "bg-white text-black" : "text-muted-foreground hover:text-white"}`}
-                data-testid="mode-sequence"
               >
                 DNA Sequence
               </button>
@@ -108,14 +120,12 @@ export default function Crispr() {
                   value={geneName}
                   onChange={(e) => setGeneName(e.target.value)}
                   className="rounded-none font-mono text-sm bg-black border-border"
-                  data-testid="gene-name-input"
                 />
                 <div className="flex gap-2">
                   <select
                     value={species}
                     onChange={(e) => setSpecies(e.target.value)}
                     className="flex-1 bg-black border border-border text-white text-xs font-mono p-2"
-                    data-testid="species-select"
                   >
                     <option value="human">Homo sapiens</option>
                     <option value="mouse">Mus musculus</option>
@@ -126,7 +136,6 @@ export default function Crispr() {
                     onClick={handleFetchSequence}
                     disabled={!geneName || loadingSeq}
                     className="rounded-none text-xs border-border"
-                    data-testid="fetch-seq-btn"
                   >
                     {loadingSeq ? "..." : "Fetch Seq"}
                   </Button>
@@ -139,7 +148,6 @@ export default function Crispr() {
                 onChange={(e) => setSequence(e.target.value)}
                 rows={6}
                 className="w-full rounded-none font-mono text-xs bg-black border border-border text-white p-2 resize-none focus:outline-none focus:ring-1 focus:ring-white"
-                data-testid="sequence-input"
               />
             )}
 
@@ -150,7 +158,6 @@ export default function Crispr() {
                   value={pam}
                   onChange={(e) => setPam(e.target.value)}
                   className="w-full bg-black border border-border text-white text-xs font-mono p-2"
-                  data-testid="pam-select"
                 >
                   <option value="NGG">NGG (SpCas9)</option>
                   <option value="NNGRRT">NNGRRT (SaCas9)</option>
@@ -168,7 +175,6 @@ export default function Crispr() {
                   min={17}
                   max={24}
                   className="rounded-none font-mono text-sm bg-black border-border"
-                  data-testid="guide-length-input"
                 />
               </div>
             </div>
@@ -177,7 +183,6 @@ export default function Crispr() {
               onClick={handleDesign}
               disabled={(!geneName && !sequence) || designMutation.isPending}
               className="w-full rounded-none uppercase text-xs"
-              data-testid="design-btn"
             >
               {designMutation.isPending ? "Designing Guides..." : "Design gRNAs"}
             </Button>
@@ -207,6 +212,10 @@ export default function Crispr() {
           </CardContent>
         </Card>
       </div>
+
+      {designMutation.isPending && !result && (
+        <Skeleton className="h-64 rounded-none" />
+      )}
 
       {result && (
         <Card className="rounded-none border-border bg-card">

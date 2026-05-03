@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   useSearchCompounds, useGetCompound, useGetCompoundActivities,
   useSearchTargets, useGetDrugDashboardStats,
@@ -44,7 +44,6 @@ function parseSmilesRough(smiles: string): { atoms: Atom[]; bonds: Bond[] } {
   let angle = 0;
   let lastAtomIdx = -1;
   const stack: number[] = [];
-  let bondStack: number | null = null;
 
   while (i < smiles.length) {
     if (smiles[i] === "(") { stack.push(lastAtomIdx); i++; continue; }
@@ -55,7 +54,7 @@ function parseSmilesRough(smiles: string): { atoms: Atom[]; bonds: Bond[] } {
       const inner = smiles.slice(i + 1, end);
       const el = inner.match(/[A-Z][a-z]?/)?.[0] ?? "C";
       const r = 1.5 + (atoms.length / 10) * 0.2;
-      atoms.push({ element: el.toUpperCase(), x: Math.cos(angle) * r, y: Math.sin(angle) * r, z: (Math.random() - 0.5) * 0.5, index: atoms.length });
+      atoms.push({ element: el.toUpperCase(), x: Math.cos(angle) * r, y: Math.sin(angle) * r, z: ((atoms.length % 5) - 2) * 0.3, index: atoms.length });
       if (lastAtomIdx >= 0) bonds.push({ from: lastAtomIdx, to: atoms.length - 1, order: 1 });
       lastAtomIdx = atoms.length - 1;
       angle += angleStep;
@@ -68,7 +67,7 @@ function parseSmilesRough(smiles: string): { atoms: Atom[]; bonds: Bond[] } {
     const element = (elements.includes(twoChar) ? twoChar : elements.includes(oneChar!.toUpperCase()) ? oneChar!.toUpperCase() : null);
     if (element) {
       const r = 1.5 + (atoms.length / 10) * 0.2;
-      atoms.push({ element, x: Math.cos(angle) * r, y: Math.sin(angle) * r, z: (Math.random() - 0.5) * 0.5, index: atoms.length });
+      atoms.push({ element, x: Math.cos(angle) * r, y: Math.sin(angle) * r, z: ((atoms.length % 5) - 2) * 0.3, index: atoms.length });
       if (lastAtomIdx >= 0) bonds.push({ from: lastAtomIdx, to: atoms.length - 1, order: 1 });
       lastAtomIdx = atoms.length - 1;
       angle += angleStep;
@@ -121,11 +120,14 @@ function MoleculeViewer3D({ smiles }: { smiles: string }) {
   );
 }
 
+const DEFAULT_COMPOUND_QUERY = "imatinib";
+const DEFAULT_TARGET_QUERY = "EGFR";
+
 export default function Drugs() {
-  const [query, setQuery] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [targetQuery, setTargetQuery] = useState("");
-  const [targetSearchTerm, setTargetSearchTerm] = useState("");
+  const [query, setQuery] = useState(DEFAULT_COMPOUND_QUERY);
+  const [searchTerm, setSearchTerm] = useState(DEFAULT_COMPOUND_QUERY);
+  const [targetQuery, setTargetQuery] = useState(DEFAULT_TARGET_QUERY);
+  const [targetSearchTerm, setTargetSearchTerm] = useState(DEFAULT_TARGET_QUERY);
   const [selectedChemblId, setSelectedChemblId] = useState<string | null>(null);
 
   const { data: statsData } = useGetDrugDashboardStats();
@@ -147,6 +149,13 @@ export default function Drugs() {
     { query: { enabled: !!selectedChemblId } }
   );
 
+  useEffect(() => {
+    if (searchData?.compounds && searchData.compounds.length > 0 && !selectedChemblId) {
+      const first = searchData.compounds[0];
+      if (first?.chemblId) setSelectedChemblId(first.chemblId);
+    }
+  }, [searchData]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -158,9 +167,9 @@ export default function Drugs() {
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {[
-          ["Approved Drugs (ChEMBL)", statsData?.approvedDrugs ?? "—"],
-          ["Unique Targets", statsData?.uniqueTargets ?? "—"],
-          ["Compounds Searched", statsData?.totalCompoundsSearched ?? 0],
+          ["Approved Drugs (ChEMBL)", (statsData as { approvedDrugs?: string | number } | undefined)?.approvedDrugs ?? "—"],
+          ["Unique Targets", (statsData as { uniqueTargets?: string | number } | undefined)?.uniqueTargets ?? "—"],
+          ["Compounds Searched", (statsData as { totalCompoundsSearched?: number } | undefined)?.totalCompoundsSearched ?? 0],
         ].map(([label, value]) => (
           <Card key={String(label)} className="rounded-none border-border bg-card">
             <CardHeader className="pb-1"><CardTitle className="text-xs uppercase text-muted-foreground">{label}</CardTitle></CardHeader>
@@ -177,11 +186,10 @@ export default function Drugs() {
               placeholder="Search compound (e.g. aspirin, imatinib, gefitinib)..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") setSearchTerm(query); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { setSearchTerm(query); setSelectedChemblId(null); } }}
               className="rounded-none font-mono text-sm bg-black border-border"
-              data-testid="compound-search-input"
             />
-            <Button onClick={() => setSearchTerm(query)} disabled={!query || searchLoading} className="rounded-none uppercase text-xs" data-testid="compound-search-btn">
+            <Button onClick={() => { setSearchTerm(query); setSelectedChemblId(null); }} disabled={!query || searchLoading} className="rounded-none uppercase text-xs">
               {searchLoading ? "..." : "Search"}
             </Button>
           </div>
@@ -195,14 +203,46 @@ export default function Drugs() {
               onChange={(e) => setTargetQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") setTargetSearchTerm(targetQuery); }}
               className="rounded-none font-mono text-sm bg-black border-border"
-              data-testid="target-search-input"
             />
-            <Button onClick={() => setTargetSearchTerm(targetQuery)} disabled={!targetQuery || targetLoading} className="rounded-none uppercase text-xs" data-testid="target-search-btn">
+            <Button onClick={() => setTargetSearchTerm(targetQuery)} disabled={!targetQuery || targetLoading} className="rounded-none uppercase text-xs">
               {targetLoading ? "..." : "Search"}
             </Button>
           </div>
         </div>
       </div>
+
+      {searchLoading && <Skeleton className="h-40 rounded-none" />}
+
+      {(searchData?.compounds ?? []).length > 0 && (
+        <div>
+          <h2 className="text-sm font-bold uppercase text-muted-foreground mb-3">
+            Compounds — "{searchTerm}" ({searchData?.total ?? 0} results)
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {searchData!.compounds.map((c) => (
+              <button
+                key={c.chemblId}
+                onClick={() => setSelectedChemblId(c.chemblId)}
+                className={`text-left border p-3 transition-colors ${selectedChemblId === c.chemblId ? "border-white bg-white/10" : "border-border bg-card hover:bg-white/5"}`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <p className="font-mono font-bold text-sm">{c.chemblId}</p>
+                  {c.maxPhase != null && c.maxPhase > 0 && (
+                    <Badge className="rounded-none bg-white text-black text-xs">Phase {c.maxPhase}</Badge>
+                  )}
+                </div>
+                <p className="text-xs text-white/80 line-clamp-1">{c.name || "—"}</p>
+                {c.molecularFormula && <p className="text-xs font-mono text-muted-foreground mt-1">{c.molecularFormula}</p>}
+                <div className="flex gap-3 mt-1 text-xs font-mono text-muted-foreground">
+                  {c.molecularWeight && <span>MW: {c.molecularWeight}</span>}
+                  {c.qedScore != null && <span>QED: {Number(c.qedScore).toFixed(2)}</span>}
+                  {c.alogp != null && <span>ALogP: {c.alogp}</span>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {selectedChemblId && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -216,10 +256,10 @@ export default function Drugs() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              {compoundLoading ? <Skeleton className="h-64 rounded-none" /> : compoundData?.smiles ? (
+              {compoundLoading ? <Skeleton className="h-64 rounded-none" /> : (compoundData as { smiles?: string } | undefined)?.smiles ? (
                 <div className="h-64 bg-black">
                   <Canvas camera={{ position: [0, 0, 8], fov: 50 }}>
-                    <MoleculeViewer3D smiles={compoundData.smiles} />
+                    <MoleculeViewer3D smiles={(compoundData as { smiles: string }).smiles} />
                   </Canvas>
                 </div>
               ) : (
@@ -236,27 +276,27 @@ export default function Drugs() {
               {compoundLoading ? <Skeleton className="h-40 rounded-none" /> : compoundData && (
                 <>
                   <div className="flex gap-2 flex-wrap mb-2">
-                    {compoundData.maxPhase != null && (
-                      <Badge className="rounded-none bg-white text-black text-xs">Phase {compoundData.maxPhase}</Badge>
+                    {(compoundData as { maxPhase?: number }).maxPhase != null && (
+                      <Badge className="rounded-none bg-white text-black text-xs">Phase {(compoundData as { maxPhase: number }).maxPhase}</Badge>
                     )}
-                    {compoundData.indication && (
-                      <Badge className="rounded-none bg-white/20 text-white text-xs">{compoundData.indication}</Badge>
+                    {(compoundData as { indication?: string }).indication && (
+                      <Badge className="rounded-none bg-white/20 text-white text-xs">{(compoundData as { indication: string }).indication}</Badge>
                     )}
                   </div>
-                  <p className="font-bold text-sm">{compoundData.name}</p>
-                  {(compoundData.synonyms ?? []).slice(0, 3).map((s) => (
-                    <p key={s} className="text-muted-foreground">{s}</p>
+                  <p className="font-bold text-sm">{(compoundData as { name?: string }).name}</p>
+                  {((compoundData as { synonyms?: string[] }).synonyms ?? []).slice(0, 3).map((s, i) => (
+                    <p key={i} className="text-muted-foreground">{s}</p>
                   ))}
                   <div className="grid grid-cols-2 gap-1 mt-2">
                     {[
-                      ["Formula", compoundData.molecularFormula],
-                      ["MW", compoundData.molecularWeight ? `${compoundData.molecularWeight} Da` : null],
-                      ["ALogP", compoundData.alogp],
-                      ["QED", compoundData.qedScore ? compoundData.qedScore.toFixed(3) : null],
-                      ["HBD", compoundData.hbondDonors],
-                      ["HBA", compoundData.hbondAcceptors],
-                      ["Rotatable Bonds", compoundData.rotatableBonds],
-                      ["Aromatic Rings", compoundData.aromaticRings],
+                      ["Formula", (compoundData as { molecularFormula?: string }).molecularFormula],
+                      ["MW", (compoundData as { molecularWeight?: number }).molecularWeight ? `${(compoundData as { molecularWeight: number }).molecularWeight} Da` : null],
+                      ["ALogP", (compoundData as { alogp?: number }).alogp],
+                      ["QED", (compoundData as { qedScore?: number | string }).qedScore != null ? Number((compoundData as { qedScore: number | string }).qedScore).toFixed(3) : null],
+                      ["HBD", (compoundData as { hbondDonors?: number }).hbondDonors],
+                      ["HBA", (compoundData as { hbondAcceptors?: number }).hbondAcceptors],
+                      ["Rotatable Bonds", (compoundData as { rotatableBonds?: number }).rotatableBonds],
+                      ["Aromatic Rings", (compoundData as { aromaticRings?: number }).aromaticRings],
                     ].map(([k, v]) => v != null && (
                       <div key={String(k)} className="flex justify-between border-b border-border py-1">
                         <span className="text-muted-foreground">{k}</span>
@@ -271,7 +311,7 @@ export default function Drugs() {
         </div>
       )}
 
-      {activitiesData && (activitiesData.activities ?? []).length > 0 && (
+      {activitiesData && ((activitiesData as { activities?: unknown[] }).activities ?? []).length > 0 && (
         <Card className="rounded-none border-border bg-card">
           <CardHeader><CardTitle className="text-sm uppercase">Bioactivities — {selectedChemblId}</CardTitle></CardHeader>
           <CardContent>
@@ -287,7 +327,7 @@ export default function Drugs() {
                   </tr>
                 </thead>
                 <tbody>
-                  {activitiesData.activities!.slice(0, 15).map((a) => (
+                  {((activitiesData as { activities: Array<{ activityId: string; targetName: string; assayType: string; standardType: string; relation: string; standardValue: number; standardUnits: string; pchembl?: number }> }).activities ?? []).slice(0, 15).map((a) => (
                     <tr key={a.activityId} className="border-b border-border hover:bg-white/5">
                       <td className="py-2 pr-4 max-w-[200px] truncate">{a.targetName}</td>
                       <td className="py-2 pr-4">{a.assayType}</td>
@@ -303,39 +343,7 @@ export default function Drugs() {
         </Card>
       )}
 
-      {(searchData?.compounds ?? []).length > 0 && (
-        <div>
-          <h2 className="text-sm font-bold uppercase text-muted-foreground mb-3">
-            Compounds — "{searchTerm}" ({searchData?.total ?? 0} results)
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {searchData!.compounds.map((c) => (
-              <button
-                key={c.chemblId}
-                onClick={() => setSelectedChemblId(c.chemblId)}
-                className={`text-left border p-3 transition-colors ${selectedChemblId === c.chemblId ? "border-white bg-white/10" : "border-border bg-card hover:bg-white/5"}`}
-                data-testid="compound-card"
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <p className="font-mono font-bold text-sm">{c.chemblId}</p>
-                  {c.maxPhase != null && c.maxPhase > 0 && (
-                    <Badge className="rounded-none bg-white text-black text-xs">Phase {c.maxPhase}</Badge>
-                  )}
-                </div>
-                <p className="text-xs text-white/80 line-clamp-1">{c.name || "—"}</p>
-                {c.molecularFormula && <p className="text-xs font-mono text-muted-foreground mt-1">{c.molecularFormula}</p>}
-                <div className="flex gap-3 mt-1 text-xs font-mono text-muted-foreground">
-                  {c.molecularWeight && <span>MW: {c.molecularWeight}</span>}
-                  {c.qedScore && <span>QED: {c.qedScore.toFixed(2)}</span>}
-                  {c.alogp != null && <span>ALogP: {c.alogp}</span>}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {(targetData?.targets ?? []).length > 0 && (
+      {(targetData as { targets?: unknown[] } | undefined)?.targets && ((targetData as { targets: unknown[] }).targets ?? []).length > 0 && (
         <Card className="rounded-none border-border bg-card">
           <CardHeader><CardTitle className="text-sm uppercase">Targets — "{targetSearchTerm}"</CardTitle></CardHeader>
           <CardContent>
@@ -351,7 +359,7 @@ export default function Drugs() {
                   </tr>
                 </thead>
                 <tbody>
-                  {targetData!.targets.map((t) => (
+                  {((targetData as { targets: Array<{ targetChemblId: string; targetName: string; targetType: string; organism: string; geneNames?: string[] }> }).targets ?? []).map((t) => (
                     <tr key={t.targetChemblId} className="border-b border-border hover:bg-white/5">
                       <td className="py-2 pr-4 font-mono">{t.targetChemblId}</td>
                       <td className="py-2 pr-4 max-w-[200px] truncate">{t.targetName}</td>

@@ -37,8 +37,8 @@ async function extractWithPubTator(text: string, pmid?: string) {
               const etype = typeMap[ann.infons.type ?? ""] ?? "gene";
               entities.push({
                 id: randomUUID(),
-                text: ann.text,
-                type: etype,
+                entityText: ann.text,
+                entityType: etype,
                 normalizedId: ann.infons.identifier ?? null,
                 confidence: 0.9,
                 sourceText: passage.text ?? null,
@@ -64,8 +64,8 @@ async function extractWithPubTator(text: string, pmid?: string) {
       for (const match of text.matchAll(pattern)) {
         entities.push({
           id: randomUUID(),
-          text: match[0],
-          type,
+          entityText: match[0],
+          entityType: type,
           normalizedId: null,
           confidence: 0.75,
           sourceText: text,
@@ -81,17 +81,17 @@ async function extractWithPubTator(text: string, pmid?: string) {
 
 function inferRelations(entities: Array<Record<string, unknown>>) {
   const relations: Array<Record<string, unknown>> = [];
-  const genes = entities.filter((e) => e.type === "gene");
-  const diseases = entities.filter((e) => e.type === "disease");
-  const drugs = entities.filter((e) => e.type === "drug");
+  const genes = entities.filter((e) => e.entityType === "gene");
+  const diseases = entities.filter((e) => e.entityType === "disease");
+  const drugs = entities.filter((e) => e.entityType === "drug");
 
   for (const gene of genes) {
     for (const disease of diseases) {
       relations.push({
         id: randomUUID(),
-        subjectText: gene.text,
+        subjectText: gene.entityText,
         predicate: "associated_with",
-        objectText: disease.text,
+        objectText: disease.entityText,
         confidence: 0.7,
         evidence: "co-occurrence",
       });
@@ -99,9 +99,9 @@ function inferRelations(entities: Array<Record<string, unknown>>) {
     for (const drug of drugs) {
       relations.push({
         id: randomUUID(),
-        subjectText: drug.text,
+        subjectText: drug.entityText,
         predicate: "targets",
-        objectText: gene.text,
+        objectText: gene.entityText,
         confidence: 0.65,
         evidence: "co-occurrence",
       });
@@ -143,13 +143,13 @@ router.post("/nlp/extract", async (req, res) => {
 
   const entityCounts: Record<string, number> = {};
   for (const e of entities) {
-    const t = e.type as string;
+    const t = e.entityType as string;
     entityCounts[t] = (entityCounts[t] ?? 0) + 1;
   }
 
   res.json({
     entities: entities.map((e) => ({
-      id: e.id, text: e.text, type: e.type, normalizedId: e.normalizedId,
+      id: e.id, text: e.entityText, type: e.entityType, normalizedId: e.normalizedId,
       confidence: e.confidence, startOffset: e.startOffset, endOffset: e.endOffset,
     })),
     relations: relations.map((r) => ({

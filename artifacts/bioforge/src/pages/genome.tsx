@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   useSearchGenomicRegion, useGetGenomicRegion, useListGenomeTracks,
 } from "@workspace/api-client-react";
@@ -19,6 +19,8 @@ const CONSEQUENCE_COLORS: Record<string, string> = {
   intron_variant: "#444444",
   default: "#555555",
 };
+
+const BRCA1_REGION = { chromosome: "17", start: 41196311, end: 41277500 };
 
 function GenomeBrowser3D({
   genes,
@@ -86,10 +88,10 @@ function GenomeBrowser3D({
 }
 
 export default function Genome() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [regionInput, setRegionInput] = useState("");
-  const [activeRegion, setActiveRegion] = useState<{ chromosome: string; start: number; end: number } | null>(null);
+  const [searchQuery, setSearchQuery] = useState("BRCA1");
+  const [searchTerm, setSearchTerm] = useState("BRCA1");
+  const [regionInput, setRegionInput] = useState("17:41196311-41277500");
+  const [activeRegion, setActiveRegion] = useState<{ chromosome: string; start: number; end: number }>(BRCA1_REGION);
 
   const { data: searchData, isLoading: searchLoading } = useSearchGenomicRegion(
     { query: searchTerm },
@@ -97,11 +99,11 @@ export default function Genome() {
   );
   const { data: regionData, isLoading: regionLoading } = useGetGenomicRegion(
     {
-      chromosome: activeRegion?.chromosome ?? "",
-      start: activeRegion?.start ?? 0,
-      end: activeRegion?.end ?? 0,
+      chromosome: activeRegion.chromosome,
+      start: activeRegion.start,
+      end: activeRegion.end,
     },
-    { query: { enabled: !!activeRegion } }
+    { query: { enabled: true } }
   );
   const { data: tracksData } = useListGenomeTracks();
 
@@ -129,7 +131,7 @@ export default function Genome() {
       <div>
         <h1 className="text-3xl font-bold uppercase tracking-tight">Genome Browser</h1>
         <p className="text-muted-foreground font-mono mt-1 text-sm">
-          Ensembl REST API + 3D lollipop chromosome view
+          Ensembl REST API + 3D lollipop chromosome view — BRCA1 chr17:41,196,311–41,277,500
         </p>
       </div>
 
@@ -142,9 +144,8 @@ export default function Genome() {
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
               className="rounded-none font-mono text-sm bg-black border-border"
-              data-testid="genome-search-input"
             />
-            <Button onClick={handleSearch} disabled={!searchQuery || searchLoading} className="rounded-none uppercase text-xs" data-testid="genome-search-btn">
+            <Button onClick={handleSearch} disabled={!searchQuery || searchLoading} className="rounded-none uppercase text-xs">
               {searchLoading ? "..." : "Search"}
             </Button>
           </div>
@@ -156,7 +157,6 @@ export default function Genome() {
                   key={f.id}
                   onClick={() => handleFeatureSelect(f)}
                   className="w-full text-left flex items-center justify-between px-2 py-1.5 hover:bg-white/10 transition-colors"
-                  data-testid="genome-feature-item"
                 >
                   <div>
                     <span className="font-mono font-bold text-xs">{f.name}</span>
@@ -177,11 +177,8 @@ export default function Genome() {
               onChange={(e) => setRegionInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleRegionJump(); }}
               className="rounded-none font-mono text-sm bg-black border-border"
-              data-testid="region-input"
             />
-            <Button onClick={handleRegionJump} className="rounded-none uppercase text-xs" data-testid="region-jump-btn">
-              Jump
-            </Button>
+            <Button onClick={handleRegionJump} className="rounded-none uppercase text-xs">Jump</Button>
           </div>
         </div>
 
@@ -200,82 +197,69 @@ export default function Genome() {
         </Card>
       </div>
 
-      {activeRegion && (
-        <>
-          <Card className="rounded-none border-border bg-card">
-            <CardHeader>
-              <CardTitle className="text-sm uppercase flex items-center justify-between">
-                <span>
-                  chr{activeRegion.chromosome}:{activeRegion.start.toLocaleString()}–{activeRegion.end.toLocaleString()}
-                </span>
-                {regionData && (
-                  <span className="text-xs text-muted-foreground font-mono">
-                    {regionData.genes?.length ?? 0} genes, {regionData.variants?.length ?? 0} variants
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {regionLoading ? (
-                <Skeleton className="h-80 rounded-none" />
-              ) : regionData ? (
-                <div className="h-80 bg-black">
-                  <Canvas camera={{ position: [0, 4, 12], fov: 55 }}>
-                    <GenomeBrowser3D
-                      genes={regionData.genes ?? []}
-                      variants={regionData.variants ?? []}
-                      regionStart={regionData.start ?? activeRegion.start}
-                      regionEnd={regionData.end ?? activeRegion.end}
-                    />
-                  </Canvas>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
+      <Card className="rounded-none border-border bg-card">
+        <CardHeader>
+          <CardTitle className="text-sm uppercase flex items-center justify-between">
+            <span>
+              chr{activeRegion.chromosome}:{activeRegion.start.toLocaleString()}–{activeRegion.end.toLocaleString()}
+            </span>
+            {regionData && (
+              <span className="text-xs text-muted-foreground font-mono">
+                {(regionData as { genes?: unknown[] }).genes?.length ?? 0} genes, {(regionData as { variants?: unknown[] }).variants?.length ?? 0} variants
+              </span>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {regionLoading ? (
+            <Skeleton className="h-80 rounded-none" />
+          ) : regionData ? (
+            <div className="h-80 bg-black">
+              <Canvas camera={{ position: [0, 4, 12], fov: 55 }}>
+                <GenomeBrowser3D
+                  genes={(regionData as { genes?: Array<{ id: string; name: string; start: number; end: number; strand: number; biotype: string }> }).genes ?? []}
+                  variants={(regionData as { variants?: Array<{ id: string; position: number; consequence: string }> }).variants ?? []}
+                  regionStart={(regionData as { start?: number }).start ?? activeRegion.start}
+                  regionEnd={(regionData as { end?: number }).end ?? activeRegion.end}
+                />
+              </Canvas>
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
-          {regionData && (regionData.genes ?? []).length > 0 && (
-            <Card className="rounded-none border-border bg-card">
-              <CardHeader><CardTitle className="text-sm uppercase">Genes in Region</CardTitle></CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs font-mono">
-                    <thead>
-                      <tr className="border-b border-border text-muted-foreground uppercase">
-                        <th className="text-left py-2 pr-4">Name</th>
-                        <th className="text-left py-2 pr-4">ID</th>
-                        <th className="text-left py-2 pr-4">Start</th>
-                        <th className="text-left py-2 pr-4">End</th>
-                        <th className="text-left py-2 pr-4">Strand</th>
-                        <th className="text-left py-2 pr-4">Biotype</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {regionData.genes!.map((g) => (
-                        <tr key={g.id} className="border-b border-border hover:bg-white/5">
-                          <td className="py-2 pr-4 font-bold">{g.name}</td>
-                          <td className="py-2 pr-4 text-muted-foreground">{g.id}</td>
-                          <td className="py-2 pr-4">{g.start?.toLocaleString()}</td>
-                          <td className="py-2 pr-4">{g.end?.toLocaleString()}</td>
-                          <td className="py-2 pr-4">{g.strand === 1 ? "+" : "-"}</td>
-                          <td className="py-2 pr-4 text-muted-foreground">{g.biotype}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </>
-      )}
-
-      {!activeRegion && (
-        <div className="border border-border bg-card p-12 text-center">
-          <p className="text-sm font-mono text-muted-foreground uppercase">
-            Search for a gene or enter a genomic region to begin
-          </p>
-          <p className="text-xs text-muted-foreground mt-2">Example: 17:41196311-41277500 (BRCA1)</p>
-        </div>
+      {regionData && ((regionData as { genes?: unknown[] }).genes ?? []).length > 0 && (
+        <Card className="rounded-none border-border bg-card">
+          <CardHeader><CardTitle className="text-sm uppercase">Genes in Region</CardTitle></CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs font-mono">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground uppercase">
+                    <th className="text-left py-2 pr-4">Name</th>
+                    <th className="text-left py-2 pr-4">ID</th>
+                    <th className="text-left py-2 pr-4">Start</th>
+                    <th className="text-left py-2 pr-4">End</th>
+                    <th className="text-left py-2 pr-4">Strand</th>
+                    <th className="text-left py-2 pr-4">Biotype</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {((regionData as { genes?: Array<{ id: string; name: string; start: number; end: number; strand: number; biotype: string }> }).genes ?? []).map((g) => (
+                    <tr key={g.id} className="border-b border-border hover:bg-white/5">
+                      <td className="py-2 pr-4 font-bold">{g.name}</td>
+                      <td className="py-2 pr-4 text-muted-foreground">{g.id}</td>
+                      <td className="py-2 pr-4">{g.start?.toLocaleString()}</td>
+                      <td className="py-2 pr-4">{g.end?.toLocaleString()}</td>
+                      <td className="py-2 pr-4">{g.strand === 1 ? "+" : "-"}</td>
+                      <td className="py-2 pr-4 text-muted-foreground">{g.biotype}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

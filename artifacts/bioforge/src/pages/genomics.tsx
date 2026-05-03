@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useUploadVcf, useListVariants, useGetGenomicsStats, useListGenomicsJobs, useAnnotateVariant,
 } from "@workspace/api-client-react";
@@ -7,6 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+
+const SAMPLE_VCF = `##fileformat=VCFv4.2
+##reference=GRCh38
+#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO
+17\t41197701\trs80357906\tG\tA\t.\tPASS\tAF=0.001
+17\t41209068\trs28897696\tC\tT\t.\tPASS\tAF=0.002
+17\t41215920\trs80358101\tG\tT\t.\tPASS\tAF=0.0005
+17\t41234451\trs1799950\tG\tA\t.\tPASS\tAF=0.01
+17\t41244000\trs80357382\tA\tG\t.\tPASS\tAF=0.003
+7\t117548628\trs75527207\tG\tT\t.\tPASS\tAF=0.001
+7\t117540076\trs1800118\tA\tG\t.\tPASS\tAF=0.015
+13\t32316422\trs80359550\tA\tC\t.\tPASS\tAF=0.001
+13\t32363178\trs80359304\tT\tA\t.\tPASS\tAF=0.0008
+1\t925952\trs1234\tG\tA\t.\tPASS\tAF=0.01`;
 
 const SIG_COLORS: Record<string, string> = {
   "Pathogenic": "bg-white text-black",
@@ -17,11 +31,12 @@ const SIG_COLORS: Record<string, string> = {
 };
 
 export default function Genomics() {
-  const [filename, setFilename] = useState("");
-  const [vcfContent, setVcfContent] = useState("");
+  const [filename, setFilename] = useState("brca1_cftr_brca2_sample.vcf");
+  const [vcfContent, setVcfContent] = useState(SAMPLE_VCF);
   const [chromosomeFilter, setChromosomeFilter] = useState("");
   const [significanceFilter, setSignificanceFilter] = useState("");
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  const [autoLoaded, setAutoLoaded] = useState(false);
 
   const uploadMutation = useUploadVcf();
   const { data: variantsData, isLoading: varLoading, refetch: refetchVariants } = useListVariants({
@@ -35,10 +50,25 @@ export default function Genomics() {
     query: { enabled: !!selectedVariantId },
   });
 
+  useEffect(() => {
+    if (autoLoaded) return;
+    if (statsLoading) return;
+    const totalVariants = (stats as { totalVariants?: number } | undefined)?.totalVariants ?? 0;
+    if (totalVariants === 0) {
+      setAutoLoaded(true);
+      uploadMutation.mutate(
+        { data: { filename: "brca1_cftr_brca2_sample.vcf", content: SAMPLE_VCF } },
+        { onSuccess: () => refetchVariants() }
+      );
+    } else {
+      setAutoLoaded(true);
+    }
+  }, [stats, statsLoading, autoLoaded]);
+
   const handleUpload = () => {
     if (!vcfContent || !filename) return;
     uploadMutation.mutate({ data: { filename, content: vcfContent } }, {
-      onSuccess: () => { refetchVariants(); setVcfContent(""); setFilename(""); },
+      onSuccess: () => { refetchVariants(); },
     });
   };
 
@@ -56,19 +86,19 @@ export default function Genomics() {
           <>
             <Card className="rounded-none border-border bg-card">
               <CardHeader className="pb-1"><CardTitle className="text-xs uppercase text-muted-foreground">Total Variants</CardTitle></CardHeader>
-              <CardContent><p className="text-3xl font-bold font-mono">{stats?.totalVariants ?? 0}</p></CardContent>
+              <CardContent><p className="text-3xl font-bold font-mono">{(stats as { totalVariants?: number } | undefined)?.totalVariants ?? 0}</p></CardContent>
             </Card>
             <Card className="rounded-none border-border bg-card">
               <CardHeader className="pb-1"><CardTitle className="text-xs uppercase text-muted-foreground">Jobs Run</CardTitle></CardHeader>
-              <CardContent><p className="text-3xl font-bold font-mono">{stats?.recentJobs ?? 0}</p></CardContent>
+              <CardContent><p className="text-3xl font-bold font-mono">{(stats as { recentJobs?: number } | undefined)?.recentJobs ?? 0}</p></CardContent>
             </Card>
             <Card className="rounded-none border-border bg-card">
               <CardHeader className="pb-1"><CardTitle className="text-xs uppercase text-muted-foreground">Chromosomes</CardTitle></CardHeader>
-              <CardContent><p className="text-3xl font-bold font-mono">{stats?.byChromosome?.length ?? 0}</p></CardContent>
+              <CardContent><p className="text-3xl font-bold font-mono">{(stats as { byChromosome?: unknown[] } | undefined)?.byChromosome?.length ?? 0}</p></CardContent>
             </Card>
             <Card className="rounded-none border-border bg-card">
               <CardHeader className="pb-1"><CardTitle className="text-xs uppercase text-muted-foreground">Consequences</CardTitle></CardHeader>
-              <CardContent><p className="text-3xl font-bold font-mono">{stats?.byConsequence?.length ?? 0}</p></CardContent>
+              <CardContent><p className="text-3xl font-bold font-mono">{(stats as { byConsequence?: unknown[] } | undefined)?.byConsequence?.length ?? 0}</p></CardContent>
             </Card>
           </>
         )}
@@ -83,21 +113,17 @@ export default function Genomics() {
               value={filename}
               onChange={(e) => setFilename(e.target.value)}
               className="rounded-none font-mono text-sm bg-black border-border"
-              data-testid="vcf-filename-input"
             />
             <textarea
-              placeholder={"##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n1\t925952\trs1234\tG\tA\t.\tPASS\tAF=0.01"}
               value={vcfContent}
               onChange={(e) => setVcfContent(e.target.value)}
               rows={8}
               className="w-full rounded-none font-mono text-xs bg-black border border-border text-white p-2 resize-none focus:outline-none focus:ring-1 focus:ring-white"
-              data-testid="vcf-content-input"
             />
             <Button
               onClick={handleUpload}
               disabled={!vcfContent || !filename || uploadMutation.isPending}
               className="w-full rounded-none uppercase text-xs"
-              data-testid="vcf-upload-btn"
             >
               {uploadMutation.isPending ? "Annotating..." : "Upload + Annotate"}
             </Button>
@@ -117,8 +143,11 @@ export default function Genomics() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2 max-h-56 overflow-auto">
-              {(jobsData?.jobs ?? []).length === 0 && (
-                <p className="text-xs text-muted-foreground font-mono">No jobs yet. Upload a VCF to start.</p>
+              {(jobsData?.jobs ?? []).length === 0 && uploadMutation.isPending && (
+                <p className="text-xs text-muted-foreground font-mono">Loading sample variants from BRCA1, CFTR, BRCA2...</p>
+              )}
+              {(jobsData?.jobs ?? []).length === 0 && !uploadMutation.isPending && (
+                <p className="text-xs text-muted-foreground font-mono">No jobs yet.</p>
               )}
               {(jobsData?.jobs ?? []).map((job) => (
                 <div key={job.id} className="flex items-center justify-between border-b border-border py-1">
@@ -145,19 +174,17 @@ export default function Genomics() {
               value={chromosomeFilter}
               onChange={(e) => setChromosomeFilter(e.target.value)}
               className="rounded-none font-mono text-xs bg-black border-border w-40"
-              data-testid="chromosome-filter"
             />
             <Input
               placeholder="Filter significance..."
               value={significanceFilter}
               onChange={(e) => setSignificanceFilter(e.target.value)}
               className="rounded-none font-mono text-xs bg-black border-border w-48"
-              data-testid="significance-filter"
             />
           </div>
         </CardHeader>
         <CardContent>
-          {varLoading ? <Skeleton className="h-48 rounded-none" /> : (
+          {varLoading || uploadMutation.isPending ? <Skeleton className="h-48 rounded-none" /> : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs font-mono">
                 <thead>
@@ -181,7 +208,6 @@ export default function Genomics() {
                       key={v.id}
                       className="border-b border-border hover:bg-white/5 cursor-pointer transition-colors"
                       onClick={() => setSelectedVariantId(v.id === selectedVariantId ? null : v.id)}
-                      data-testid="variant-row"
                     >
                       <td className="py-2 pr-4">{v.chromosome}</td>
                       <td className="py-2 pr-4">{v.position?.toLocaleString()}</td>
@@ -208,20 +234,20 @@ export default function Genomics() {
 
       {selectedVariantId && (
         <Card className="rounded-none border-border bg-card">
-          <CardHeader><CardTitle className="text-sm uppercase">Annotation Detail</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm uppercase">Annotation Detail — Ensembl VEP + ClinVar</CardTitle></CardHeader>
           <CardContent>
             {annotLoading ? <Skeleton className="h-24 rounded-none" /> : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
                 <div>
                   <p className="text-muted-foreground uppercase mb-1">Ensembl VEP</p>
                   <pre className="bg-black border border-border p-2 overflow-auto max-h-48 text-xs">
-                    {JSON.stringify(annotationData?.ensemblAnnotation, null, 2)}
+                    {JSON.stringify((annotationData as { ensemblAnnotation?: unknown } | undefined)?.ensemblAnnotation, null, 2)}
                   </pre>
                 </div>
                 <div>
                   <p className="text-muted-foreground uppercase mb-1">ClinVar</p>
                   <pre className="bg-black border border-border p-2 overflow-auto max-h-48 text-xs">
-                    {JSON.stringify(annotationData?.clinvarAnnotation, null, 2)}
+                    {JSON.stringify((annotationData as { clinvarAnnotation?: unknown } | undefined)?.clinvarAnnotation, null, 2)}
                   </pre>
                 </div>
               </div>
@@ -230,13 +256,13 @@ export default function Genomics() {
         </Card>
       )}
 
-      {stats && stats.byChromosome && stats.byChromosome.length > 0 && (
+      {stats && (stats as { byChromosome?: Array<{ chromosome: string; count: number }> }).byChromosome && (stats as { byChromosome?: Array<{ chromosome: string; count: number }> }).byChromosome!.length > 0 && (
         <Card className="rounded-none border-border bg-card">
           <CardHeader><CardTitle className="text-sm uppercase">Distribution by Chromosome</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-1">
-              {stats.byChromosome.slice(0, 10).map((c) => {
-                const max = stats.byChromosome![0]?.count ?? 1;
+              {(stats as { byChromosome?: Array<{ chromosome: string; count: number }> }).byChromosome!.slice(0, 10).map((c) => {
+                const max = (stats as { byChromosome?: Array<{ chromosome: string; count: number }> }).byChromosome![0]?.count ?? 1;
                 const pct = ((c.count ?? 0) / max) * 100;
                 return (
                   <div key={c.chromosome} className="flex items-center gap-3">

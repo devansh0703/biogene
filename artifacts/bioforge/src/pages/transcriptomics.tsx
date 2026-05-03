@@ -9,11 +9,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
-const JOB_STATUSES = ["pending", "running", "completed", "failed"];
+const DEFAULT_GENE = "BRCA1";
 
 export default function Transcriptomics() {
-  const [geneQuery, setGeneQuery] = useState("");
-  const [geneSearchTerm, setGeneSearchTerm] = useState("");
+  const [geneQuery, setGeneQuery] = useState(DEFAULT_GENE);
+  const [geneSearchTerm, setGeneSearchTerm] = useState(DEFAULT_GENE);
   const [tissueFilter, setTissueFilter] = useState("");
   const [showJobForm, setShowJobForm] = useState(false);
   const [jobForm, setJobForm] = useState({ name: "", sampleType: "RNA", referenceGenome: "GRCh38", pairedEnd: false });
@@ -48,7 +48,7 @@ export default function Transcriptomics() {
       </div>
 
       <Card className="rounded-none border-border bg-card">
-        <CardHeader><CardTitle className="text-sm uppercase">Gene Expression Search — GTEx v8</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-sm uppercase">Gene Expression — GTEx v8</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="flex gap-2 flex-wrap">
             <Input
@@ -57,13 +57,11 @@ export default function Transcriptomics() {
               onChange={(e) => setGeneQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") setGeneSearchTerm(geneQuery); }}
               className="rounded-none font-mono text-sm bg-black border-border flex-1 min-w-0"
-              data-testid="gene-expression-input"
             />
             <select
               value={tissueFilter}
               onChange={(e) => setTissueFilter(e.target.value)}
               className="bg-black border border-border text-white text-xs font-mono p-2 min-w-0 max-w-[200px]"
-              data-testid="tissue-filter"
             >
               <option value="">All Tissues</option>
               {(tissuesData?.tissues ?? []).map((t) => (
@@ -74,7 +72,6 @@ export default function Transcriptomics() {
               onClick={() => setGeneSearchTerm(geneQuery)}
               disabled={!geneQuery || expressionLoading}
               className="rounded-none uppercase text-xs"
-              data-testid="expression-search-btn"
             >
               {expressionLoading ? "Fetching..." : "Search GTEx"}
             </Button>
@@ -89,7 +86,7 @@ export default function Transcriptomics() {
 
           {!expressionLoading && sortedExpression.length > 0 && (
             <>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 flex-wrap">
                 <p className="text-sm font-bold uppercase font-mono">{geneSearchTerm}</p>
                 <span className="text-xs text-muted-foreground">{sortedExpression.length} tissues | max {maxTpm.toFixed(1)} TPM</span>
                 {topTissues.length > 0 && (
@@ -148,7 +145,7 @@ export default function Transcriptomics() {
           <CardHeader>
             <CardTitle className="text-sm uppercase flex items-center justify-between">
               <span>RNA-Seq Jobs ({jobsData?.jobs?.length ?? 0})</span>
-              <Button onClick={() => setShowJobForm(!showJobForm)} className="rounded-none uppercase text-xs" data-testid="add-job-btn">
+              <Button onClick={() => setShowJobForm(!showJobForm)} className="rounded-none uppercase text-xs">
                 {showJobForm ? "Cancel" : "+ New Job"}
               </Button>
             </CardTitle>
@@ -158,7 +155,7 @@ export default function Transcriptomics() {
               <div className="border border-border p-4 space-y-3">
                 <p className="text-xs uppercase text-muted-foreground font-mono">New RNA-Seq Job</p>
                 <div className="grid grid-cols-2 gap-2">
-                  <Input placeholder="Job name *" value={jobForm.name} onChange={(e) => setJobForm({ ...jobForm, name: e.target.value })} className="rounded-none font-mono text-sm bg-black border-border" data-testid="job-name-input" />
+                  <Input placeholder="Job name *" value={jobForm.name} onChange={(e) => setJobForm({ ...jobForm, name: e.target.value })} className="rounded-none font-mono text-sm bg-black border-border" />
                   <select value={jobForm.sampleType} onChange={(e) => setJobForm({ ...jobForm, sampleType: e.target.value })} className="bg-black border border-border text-white text-sm font-mono p-2">
                     {["RNA", "mRNA", "miRNA", "lncRNA", "Total RNA"].map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
@@ -170,7 +167,7 @@ export default function Transcriptomics() {
                     Paired-End
                   </label>
                 </div>
-                <Button onClick={handleCreateJob} disabled={!jobForm.name || createJobMutation.isPending} className="rounded-none uppercase text-xs" data-testid="save-job-btn">
+                <Button onClick={handleCreateJob} disabled={!jobForm.name || createJobMutation.isPending} className="rounded-none uppercase text-xs">
                   {createJobMutation.isPending ? "Creating..." : "Create Job"}
                 </Button>
               </div>
@@ -219,9 +216,11 @@ export default function Transcriptomics() {
               {(tissuesData?.tissues ?? []).map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => { setTissueFilter(t.id); if (geneSearchTerm) {} }}
+                  onClick={() => {
+                    setTissueFilter(tissueFilter === t.id ? "" : t.id);
+                    if (geneSearchTerm) setGeneSearchTerm(geneSearchTerm);
+                  }}
                   className={`w-full text-left flex items-center justify-between py-1 px-1 text-xs font-mono hover:bg-white/5 transition-colors ${tissueFilter === t.id ? "text-white" : "text-muted-foreground"}`}
-                  data-testid="tissue-item"
                 >
                   <span className={`${tissueFilter === t.id ? "font-bold" : ""}`}>{t.name}</span>
                   <span>{t.sampleCount}</span>
