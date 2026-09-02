@@ -135,10 +135,10 @@ router.post("/nlp/extract", async (req, res) => {
   const relations = inferRelations(entities);
 
   if (entities.length > 0) {
-    await db.insert(nlpEntitiesTable).values(entities as Parameters<typeof db.insert>[1] extends infer T ? T[] : never[]);
+    await db.insert(nlpEntitiesTable).values(entities as unknown as (typeof nlpEntitiesTable)["$inferInsert"][]);
   }
   if (relations.length > 0) {
-    await db.insert(nlpRelationsTable).values(relations as Parameters<typeof db.insert>[1] extends infer T ? T[] : never[]);
+    await db.insert(nlpRelationsTable).values(relations as unknown as (typeof nlpRelationsTable)["$inferInsert"][]);
   }
 
   const entityCounts: Record<string, number> = {};

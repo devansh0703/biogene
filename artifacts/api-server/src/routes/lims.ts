@@ -63,7 +63,7 @@ router.patch("/lims/samples/:sampleId", async (req, res) => {
   for (const key of allowed) {
     if (key in body) update[key] = body[key];
   }
-  await db.update(samplesTable).set(update as Parameters<typeof db.update>[1]).where(eq(samplesTable.id, req.params.sampleId));
+  await db.update(samplesTable).set(update as unknown as (typeof samplesTable)["$inferInsert"]).where(eq(samplesTable.id, req.params.sampleId));
   const [sample] = await db.select().from(samplesTable).where(eq(samplesTable.id, req.params.sampleId)).limit(1);
   if (!sample) { res.status(404).json({ error: "Sample not found" }); return; }
   res.json(sample);
@@ -123,7 +123,7 @@ router.patch("/lims/experiments/:experimentId", async (req, res) => {
     const [existing] = await db.select().from(experimentsTable).where(eq(experimentsTable.id, req.params.experimentId)).limit(1);
     if (existing && !existing.startedAt) update.startedAt = new Date();
   }
-  await db.update(experimentsTable).set(update as Parameters<typeof db.update>[1]).where(eq(experimentsTable.id, req.params.experimentId));
+  await db.update(experimentsTable).set(update as unknown as (typeof experimentsTable)["$inferInsert"]).where(eq(experimentsTable.id, req.params.experimentId));
   const [exp] = await db.select().from(experimentsTable).where(eq(experimentsTable.id, req.params.experimentId)).limit(1);
   if (!exp) { res.status(404).json({ error: "Experiment not found" }); return; }
   res.json(exp);

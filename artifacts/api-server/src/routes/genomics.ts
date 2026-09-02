@@ -101,7 +101,7 @@ router.post("/genomics/variants/upload", async (req, res) => {
   }));
 
   if (annotated.length > 0) {
-    await db.insert(variantsTable).values(annotated as Parameters<typeof db.insert>[1] extends infer T ? T[] : never[]);
+    await db.insert(variantsTable).values(annotated as unknown as (typeof variantsTable)["$inferInsert"][]);
   }
 
   await db.update(genomicsJobsTable)
