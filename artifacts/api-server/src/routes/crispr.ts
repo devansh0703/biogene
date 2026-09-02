@@ -1,8 +1,6 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
-import { crisprJobsTable, guideRnasTable } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import store from "../data";
 
 const router = Router();
 
@@ -154,22 +152,22 @@ router.post("/crispr/design", async (req, res) => {
   }
 
   const jobId = randomUUID();
-  await db.insert(crisprJobsTable).values({
+  store.crisprJobs.insert({
     id: jobId, geneName: resolvedGene ?? null, status: "processing",
-    pamType: pam, sequenceLength: finalSequence.length,
-  });
+    pamType: pam, sequenceLength: finalSequence.length, createdAt: new Date(),
+  } as never);
 
   const candidates = designGuides(finalSequence, pam, guideLength);
 
-  const guides = candidates.map((c, i) => ({ id: randomUUID(), jobId, rank: i + 1, ...c }));
+  const guides = candidates.map((c, i) => ({
+    id: randomUUID(), jobId, rank: i + 1, ...c, createdAt: new Date(),
+  }));
 
   if (guides.length > 0) {
-    await db.insert(guideRnasTable).values(guides);
+    store.guideRnas.insert(guides as never);
   }
 
-  await db.update(crisprJobsTable)
-    .set({ status: "completed", guidesCount: guides.length })
-    .where(eq(crisprJobsTable.id, jobId));
+  store.crisprJobs.update(jobId, { status: "completed", guidesCount: guides.length } as never);
 
   res.json({
     jobId,
@@ -182,7 +180,9 @@ router.post("/crispr/design", async (req, res) => {
 });
 
 router.get("/crispr/jobs", async (_req, res) => {
-  const jobs = await db.select().from(crisprJobsTable).orderBy(desc(crisprJobsTable.createdAt)).limit(50);
+  const jobs = store.crisprJobs.all()
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 50);
   res.json({ jobs });
 });
 

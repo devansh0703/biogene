@@ -1,8 +1,6 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
-import { transcriptomicsJobsTable } from "@workspace/db";
-import { desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import store from "../data";
 
 const router = Router();
 
@@ -112,7 +110,9 @@ function processGtexData(
 }
 
 router.get("/transcriptomics/jobs", async (_req, res) => {
-  const jobs = await db.select().from(transcriptomicsJobsTable).orderBy(desc(transcriptomicsJobsTable.createdAt)).limit(50);
+  const jobs = store.transcriptomicsJobs.all()
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 50);
   res.json({ jobs });
 });
 
@@ -124,14 +124,12 @@ router.post("/transcriptomics/jobs", async (req, res) => {
     res.status(400).json({ error: "name and sampleType are required" });
     return;
   }
-  const id = randomUUID();
-  await db.insert(transcriptomicsJobsTable).values({
-    id, name, sampleType, status: "pending",
+  const job = {
+    id: randomUUID(), name, sampleType, status: "pending",
     referenceGenome, pairedEnd: String(pairedEnd),
-  });
-  const [job] = await db.select().from(transcriptomicsJobsTable).where(
-    (await import("drizzle-orm")).eq(transcriptomicsJobsTable.id, id)
-  ).limit(1);
+    createdAt: new Date(),
+  };
+  store.transcriptomicsJobs.insert(job as never);
   res.status(201).json(job);
 });
 

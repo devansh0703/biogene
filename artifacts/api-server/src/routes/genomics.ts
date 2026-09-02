@@ -1,8 +1,6 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
-import { genomicsJobsTable, variantsTable } from "@workspace/db";
-import { eq, desc, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import store from "../data";
 
 const router = Router();
 
@@ -38,7 +36,6 @@ function parseVcf(content: string, jobId: string): Array<Record<string, unknown>
 
 async function annotateWithEnsembl(chromosome: string, position: number, ref: string, alt: string) {
   try {
-    const region = `${chromosome}:${position}-${position}`;
     const hgvs = `${chromosome}:g.${position}${ref}>${alt}`;
     const url = `https://rest.ensembl.org/vep/human/hgvs/${encodeURIComponent(hgvs)}?content-type=application/json&hgvs=1&canonical=1&pick=1`;
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
@@ -84,7 +81,9 @@ router.post("/genomics/variants/upload", async (req, res) => {
     return;
   }
   const jobId = randomUUID();
-  await db.insert(genomicsJobsTable).values({ id: jobId, filename, status: "processing" });
+  store.genomicsJobs.insert({
+    id: jobId, filename, status: "processing", variantCount: 0, createdAt: new Date(),
+  } as never);
 
   const rawVariants = parseVcf(content, jobId);
 
@@ -97,40 +96,36 @@ router.post("/genomics/variants/upload", async (req, res) => {
       const clinvar = await annotateWithClinVar(v.rsId as string);
       significance = clinvar?.significance ?? null;
     }
-    return { ...v, gene: ensembl?.gene ?? null, consequence: ensembl?.consequence ?? null, significance };
+    return { ...v, gene: ensembl?.gene ?? null, consequence: ensembl?.consequence ?? null, significance, createdAt: new Date() };
   }));
 
   if (annotated.length > 0) {
-    await db.insert(variantsTable).values(annotated as unknown as (typeof variantsTable)["$inferInsert"][]);
+    store.variants.insert(annotated as never);
   }
 
-  await db.update(genomicsJobsTable)
-    .set({ status: "completed", variantCount: annotated.length, completedAt: new Date() })
-    .where(eq(genomicsJobsTable.id, jobId));
+  store.genomicsJobs.update(jobId, {
+    status: "completed", variantCount: annotated.length, completedAt: new Date(),
+  } as never);
 
-  const job = await db.select().from(genomicsJobsTable).where(eq(genomicsJobsTable.id, jobId)).limit(1);
-  res.json(job[0]);
+  const job = store.genomicsJobs.find(jobId);
+  res.json(job);
 });
 
 router.get("/genomics/variants", async (req, res) => {
   const { jobId, chromosome, significance, limit = "50", offset = "0" } = req.query as Record<string, string>;
-  let query = db.select().from(variantsTable).$dynamic();
-  const conditions = [];
-  if (jobId) conditions.push(eq(variantsTable.jobId, jobId));
-  if (chromosome) conditions.push(eq(variantsTable.chromosome, chromosome));
-  if (significance) conditions.push(eq(variantsTable.significance, significance));
-  if (conditions.length) {
-    const { and } = await import("drizzle-orm");
-    query = query.where(and(...conditions));
-  }
-  const variants = await query.limit(parseInt(limit)).offset(parseInt(offset)).orderBy(desc(variantsTable.createdAt));
-  const total = await db.select({ count: sql<number>`count(*)` }).from(variantsTable);
-  res.json({ variants, total: Number(total[0]?.count ?? 0) });
+  let variants = store.variants.all();
+  if (jobId) variants = variants.filter((v) => v.jobId === jobId);
+  if (chromosome) variants = variants.filter((v) => v.chromosome === chromosome);
+  if (significance) variants = variants.filter((v) => v.significance === significance);
+  variants.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const total = variants.length;
+  const page = variants.slice(parseInt(offset), parseInt(offset) + parseInt(limit || "50"));
+  res.json({ variants: page, total });
 });
 
 router.get("/genomics/variants/:variantId/annotate", async (req, res) => {
   const { variantId } = req.params;
-  const [variant] = await db.select().from(variantsTable).where(eq(variantsTable.id, variantId)).limit(1);
+  const variant = store.variants.find(variantId);
   if (!variant) { res.status(404).json({ error: "Variant not found" }); return; }
 
   const [ensemblAnnotation, clinvarAnnotation] = await Promise.all([
@@ -162,33 +157,31 @@ router.get("/genomics/variants/:variantId/annotate", async (req, res) => {
 
 router.get("/genomics/stats", async (req, res) => {
   const { jobId } = req.query as Record<string, string>;
-  const baseCondition = jobId ? eq(variantsTable.jobId, jobId) : undefined;
+  let variants = store.variants.all();
+  if (jobId) variants = variants.filter((v) => v.jobId === jobId);
 
-  const [totalRes, byChromRes, bySigRes, byConseqRes, recentJobsRes] = await Promise.all([
-    db.select({ count: sql<number>`count(*)` }).from(variantsTable).where(baseCondition),
-    db.select({ chromosome: variantsTable.chromosome, count: sql<number>`count(*)` })
-      .from(variantsTable).where(baseCondition)
-      .groupBy(variantsTable.chromosome).orderBy(desc(sql`count(*)`)).limit(25),
-    db.select({ significance: variantsTable.significance, count: sql<number>`count(*)` })
-      .from(variantsTable).where(baseCondition)
-      .groupBy(variantsTable.significance),
-    db.select({ consequence: variantsTable.consequence, count: sql<number>`count(*)` })
-      .from(variantsTable).where(baseCondition)
-      .groupBy(variantsTable.consequence).orderBy(desc(sql`count(*)`)).limit(10),
-    db.select({ count: sql<number>`count(*)` }).from(genomicsJobsTable),
-  ]);
+  const byChromosomeTmp: Record<string, number> = {};
+  const bySignificanceTmp: Record<string, number> = {};
+  const byConsequenceTmp: Record<string, number> = {};
+  for (const v of variants) {
+    byChromosomeTmp[v.chromosome] = (byChromosomeTmp[v.chromosome] ?? 0) + 1;
+    bySignificanceTmp[v.significance ?? "unknown"] = (bySignificanceTmp[v.significance ?? "unknown"] ?? 0) + 1;
+    byConsequenceTmp[v.consequence ?? "unknown"] = (byConsequenceTmp[v.consequence ?? "unknown"] ?? 0) + 1;
+  }
 
   res.json({
-    totalVariants: Number(totalRes[0]?.count ?? 0),
-    byChromosome: byChromRes.map(r => ({ chromosome: r.chromosome, count: Number(r.count) })),
-    bySignificance: bySigRes.map(r => ({ significance: r.significance ?? "unknown", count: Number(r.count) })),
-    byConsequence: byConseqRes.map(r => ({ consequence: r.consequence ?? "unknown", count: Number(r.count) })),
-    recentJobs: Number(recentJobsRes[0]?.count ?? 0),
+    totalVariants: variants.length,
+    byChromosome: Object.entries(byChromosomeTmp).map(([chromosome, count]) => ({ chromosome, count })),
+    bySignificance: Object.entries(bySignificanceTmp).map(([significance, count]) => ({ significance, count })),
+    byConsequence: Object.entries(byConsequenceTmp).map(([consequence, count]) => ({ consequence, count })),
+    recentJobs: store.genomicsJobs.count(),
   });
 });
 
-router.get("/genomics/jobs", async (req, res) => {
-  const jobs = await db.select().from(genomicsJobsTable).orderBy(desc(genomicsJobsTable.createdAt)).limit(50);
+router.get("/genomics/jobs", async (_req, res) => {
+  const jobs = store.genomicsJobs.all()
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 50);
   res.json({ jobs });
 });
 

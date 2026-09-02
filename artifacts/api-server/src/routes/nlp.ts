@@ -1,8 +1,6 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
-import { nlpEntitiesTable, nlpRelationsTable } from "@workspace/db";
-import { desc, eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import store from "../data";
 
 const router = Router();
 
@@ -135,10 +133,10 @@ router.post("/nlp/extract", async (req, res) => {
   const relations = inferRelations(entities);
 
   if (entities.length > 0) {
-    await db.insert(nlpEntitiesTable).values(entities as unknown as (typeof nlpEntitiesTable)["$inferInsert"][]);
+    store.nlpEntities.insert(entities as never);
   }
   if (relations.length > 0) {
-    await db.insert(nlpRelationsTable).values(relations as unknown as (typeof nlpRelationsTable)["$inferInsert"][]);
+    store.nlpRelations.insert(relations as never);
   }
 
   const entityCounts: Record<string, number> = {};
@@ -210,28 +208,24 @@ router.get("/nlp/papers/search", async (req, res) => {
 router.get("/nlp/knowledge-graph", async (req, res) => {
   const { entityType } = req.query as { entityType?: string };
 
-  let entityQuery = db.select({
-    text: nlpEntitiesTable.entityText,
-    type: nlpEntitiesTable.entityType,
-    id: nlpEntitiesTable.id,
-    count: sql<number>`count(*)`,
-  }).from(nlpEntitiesTable).$dynamic();
+  let entities = store.nlpEntities.all();
+  if (entityType) entities = entities.filter((e) => e.entityType === entityType);
 
-  if (entityType) entityQuery = entityQuery.where(eq(nlpEntitiesTable.entityType, entityType));
+  const entityCounts: Record<string, { id: string; type: string; count: number }> = {};
+  for (const e of entities) {
+    const key = String(e.entityText).toLowerCase();
+    if (!entityCounts[key]) entityCounts[key] = { id: e.id, type: String(e.entityType), count: 0 };
+    entityCounts[key].count++;
+  }
 
-  const [entities, relations, total] = await Promise.all([
-    entityQuery.groupBy(nlpEntitiesTable.entityText, nlpEntitiesTable.entityType, nlpEntitiesTable.id)
-      .orderBy(desc(sql`count(*)`)).limit(50),
-    db.select().from(nlpRelationsTable).orderBy(desc(nlpRelationsTable.createdAt)).limit(100),
-    db.select({ count: sql<number>`count(*)` }).from(nlpEntitiesTable),
-  ]);
+  const relations = store.nlpRelations.all()
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 100);
 
   const nodeMap = new Map<string, { id: string; label: string; type: string; count: number }>();
-  for (const e of entities) {
-    const key = e.text.toLowerCase();
-    if (!nodeMap.has(key)) {
-      nodeMap.set(key, { id: e.id, label: e.text, type: e.type, count: Number(e.count) });
-    }
+  for (const [key, v] of Object.entries(entityCounts)) {
+    if (nodeMap.has(key)) continue;
+    nodeMap.set(key, { id: v.id, label: key, type: v.type, count: v.count });
   }
 
   const nodes = Array.from(nodeMap.values());
@@ -242,7 +236,7 @@ router.get("/nlp/knowledge-graph", async (req, res) => {
     confidence: r.confidence ?? 0,
   }));
 
-  res.json({ nodes, edges, totalDocuments: Number(total[0]?.count ?? 0) });
+  res.json({ nodes, edges, totalDocuments: store.nlpEntities.count() });
 });
 
 export default router;
