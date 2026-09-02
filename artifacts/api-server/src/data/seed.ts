@@ -82,6 +82,17 @@ const EXP_STATUS = ["planned", "running", "completed", "failed"];
 
 const READ_TYPES = ["RNA", "scRNA", "DNA", "sRNA"];
 
+const GENE_SUFFIX = ["R1", "L2", "C3", "Q4", "B5", "A6", "X7", "Z8", "P9", "M10", "N11", "K12", "S13", "D14", "F15", "G16"];
+const DRUG_PREFIX = ["Azi", "Bro", "Cyto", "Daro", "Ele", "Fal", "Giri", "Halo", "Iso", "Juta", "Keto", "Lixo", "Moxa", "Nobi", "Ofra", "Pura", "Quira", "Ravo", "Soli", "Timo"];
+const DRUG_SUFFIX = ["zole", "tinib", "mab", "ib", "sertan", "prazole", "mycin", "statin", "pril", "dil", "alone", "virid", "bacin", "iane", "crine", "sone"];
+const DISEASE_MOD = ["metastatic ", "advanced ", "early-stage ", "recurrent ", "drug-resistant ", "aplastic ", "infantile ", "sporadic ", "familial ", "chronic ", "acute ", "idiopathic "];
+const DISEASE_N = [
+  "carcinoma", "sarcoma", "leukemia", "lymphoma", "melanoma", "neuroblastoma",
+  "adenocarcinoma", "glioblastoma", "myeloma", "carcinoid", "ependymoma", "glioma",
+  "retinoblastoma", "meningioma", "osteosarcoma", "astrocytoma", "cholangiocarcinoma",
+  "mesothelioma", "teratoma", "nephroblastoma",
+];
+
 export const seed = {
   genomicsJobs: [
     { filename: "tumor_exome_wgs_pass.vcf", status: "succeeded", variantCount: 1873, completedAt: daysAgo(9) },
@@ -90,11 +101,11 @@ export const seed = {
     { filename: "germline_panel.csv", status: "succeeded", variantCount: 68, completedAt: daysAgo(3) },
     { filename: "invitro_mutagenesis.tsv", status: "pending", variantCount: 0, completedAt: null },
   ].concat(
-    range(25).map((i) => ({
+    range(900).map((i) => ({
       filename: `panel_${panelSample(i)}_${seq(i)}.vcf`,
-      status: statusOf(i < 18, ["succeeded", "running", "pending", "failed"]),
-      variantCount: i < 18 ? 100 + ((i * 73) % 900) : 0,
-      completedAt: i < 18 ? daysAgo(Math.max(1, 20 - i)) : null,
+      status: statusOf(i < 700, ["succeeded", "running", "pending", "failed"]),
+      variantCount: i < 700 ? 200 + ((i * 73) % 9000) : 0,
+      completedAt: i < 700 ? daysAgo(Math.max(1, 200 - i)) : null,
     })),
   ),
 
@@ -105,11 +116,11 @@ export const seed = {
     const done = i % 3 !== 1;
     return {
       geneName: gene, status: done ? "succeeded" : "running",
-      guidesCount: done ? 8 + ((i * 7) % 24) : 0,
+      guidesCount: done ? 8 + ((i * 7) % 40) : 0,
       pamType: PAMS[i % PAMS.length],
       sequenceLength: 300 + ((i * 211) % 8000),
     };
-  }, 30),
+  }, 1500),
 
   guideRnas: makeGuides(),
 
@@ -127,7 +138,7 @@ export const seed = {
       completedAt: status === "completed" ? daysAgo(i % 6) : null,
       sampleIds: [],
     };
-  }, 30),
+  }, 1000),
 
   nlpEntities: makeEntities(),
 
@@ -145,33 +156,13 @@ export const seed = {
       referenceGenome: "GRCh38",
       pairedEnd: i % 3 === 0 ? "false" : "true",
     };
-  }, 40),
+  }, 1200),
 };
 
 function makeVariants() {
   const variants: Array<Record<string, unknown>> = [];
   let idx = 0;
-  for (let i = 0; i < 30; i++) {
-    const [gene, chromosome, base] = GENE_PANEL[i % GENE_PANEL.length];
-    variants.push({
-      id: uid(`${gene}-s${idx}`),
-      jobId: "",
-      chromosome,
-      position: base + idx * 13,
-      ref: picks.ref[idx % picks.ref.length],
-      alt: picks.alt[(idx + 1) % picks.alt.length],
-      quality: Math.round((60 + ((idx * 17) % 40)) * 10) / 10,
-      filter: "PASS",
-      rsId: `rs${100000000 + idx * 7919}`,
-      gene,
-      consequence: CONSEQUENCES[idx % CONSEQUENCES.length],
-      significance: SIGNIFICANCES[(idx * 3) % SIGNIFICANCES.length],
-      alleleFrequency: Math.round(((idx * 7) % 80) / 100 * 100) / 100,
-      createdAt: daysAgo((idx % 10) + 1),
-    });
-    idx++;
-  }
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 6000; i++) {
     const [gene, chromosome, base] = GENE_PANEL[(i * 7) % GENE_PANEL.length];
     variants.push({
       id: uid(`${gene}-g${i}`),
@@ -181,14 +172,15 @@ function makeVariants() {
       ref: picks.ref[i % picks.ref.length],
       alt: picks.alt[(i + 2) % picks.alt.length],
       quality: Math.round((50 + ((i * 29) % 50)) * 10) / 10,
-      filter: i % 11 === 0 ? "lowQual" : "PASS",
+      filter: i % 13 === 0 ? "lowQual" : "PASS",
       rsId: `rs${9e8 + i * 104729}`,
       gene,
       consequence: CONSEQUENCES[(i * 5) % CONSEQUENCES.length],
       significance: SIGNIFICANCES[(i * 2) % SIGNIFICANCES.length],
-      alleleFrequency: Math.round(((i * 11) % 100) / 100 * 100) / 100,
-      createdAt: daysAgo((i % 30) + 1),
+      alleleFrequency: Math.round((((i * 11) % 100) + Math.random()) / 100 * 100) / 100,
+      createdAt: daysAgo((i % 180) + 1),
     });
+    idx++;
   }
   return variants;
 }
@@ -201,15 +193,18 @@ function makeGuides() {
     "TGACAGCGAAGGTGAAACAC", "GATTCCTGGCTCTGCATCAC", "CAGAGTACATCGTACTTCCC",
     "AATCTTGAAGTCCCAGGCCA", "GTTGGAGCTGGTGGCGTAGGC", "ACTGGTGGAGTATTTGATAGT",
     "GTTGGAGCTGGTGGCGTAGG", "ACCCGGCTGTCGTGCGATAT", "TCCCGCCCTGTCTATGCAGG",
+    "CGAGGGAACCTCGGTTGCGC", "TCACAGTAGTCTCTCCCACT", "TCTCCCGGTCAAGGCCCCCA",
+    "GAAACCCGCTGTGAGCATCG", "GGCACGGAGAGCCAAGCGTC", "CTCACGCAACCTGTAATCCA",
+    "TAGTATTGAGTTCATTGCCC", "CAGAATCCGATTCCTAAGGA", "TCACGGACGAATGTCCAGGA",
   ];
-  for (let i = 0; i < 360; i++) {
+  for (let i = 0; i < 8000; i++) {
     const gene = GENES[(i * 7) % GENES.length];
     guides.push({
       id: uid(`${gene}-guide${i}`),
       jobId: "",
       sequence: guideSeqs[i % guideSeqs.length],
       pamSequence: ["GGG", "CGG", "AGG", "TGG"][i % 4],
-      position: 50 + i * 89,
+      position: 50 + (i % 5000) * 89,
       strand: i % 2 === 0 ? "+" : "-",
       score: Math.round((70 + ((i * 23) % 30)) / 100 * 100) / 100,
       gcContent: Math.round((40 + ((i * 13) % 30)) / 100 * 100) / 100,
@@ -225,22 +220,22 @@ function makeGuides() {
 
 function makeSamples() {
   const samples: Array<Record<string, unknown>> = [];
-  for (let i = 0; i < 80; i++) {
+  for (let i = 0; i < 1500; i++) {
     const type = SAMPLE_TYPES[i % SAMPLE_TYPES.length];
     samples.push({
       id: uid(`sample${i}`),
-      name: `${type} ${prefix(i)}-${900 + i}`,
+      name: `${type} ${prefix(i)}-${(i % 9000) + 100}`,
       type,
       status: SAMPLE_STATUS[(i * 5) % SAMPLE_STATUS.length],
       concentration: Math.round((3 + ((i * 13) % 120) * 1.7) * 10) / 10,
       unit: "ng/ul",
       volume: Math.round((10 + ((i * 7) % 490)) * 10) / 10,
-      organism: ORGANSMS[i % ORGANSMS.length],
+      organism: ORGANSMS[(i * 3) % ORGANSMS.length],
       tissue: TISSUES[(i * 3) % TISSUES.length],
-      storageLocation: `Rack-${(i % 8) + 1} Shelf-${(i % 3) + 1}`,
-      barcode: `BF-${String.fromCharCode(65 + (i % 26))}${(i % 1000).toString().padStart(3, "0")}`,
+      storageLocation: `Rack-${(i % 24) + 1} Shelf-${(i % 5) + 1}`,
+      barcode: `BF-${String.fromCharCode(65 + (i % 26))}${(i % 10).toString()}${(i % 1000).toString().padStart(3, "0")}`,
       notes: note(type),
-      createdAt: daysAgo((i % 40) + 1),
+      createdAt: daysAgo((i % 365) + 1),
       updatedAt: daysAgo(Math.floor(Math.random() * 5)),
     });
   }
@@ -252,32 +247,46 @@ function makeEntities() {
   GENES.forEach((gene, i) => entities.push(ent(gene, "gene", `HGNC:${1100 + i * 37}`, rnd(0.88, 0.99))));
   DRUGS.forEach((drug, i) => entities.push(ent(drug, "drug", `CHEBI:${34327 + i * 131}`, rnd(0.82, 0.96))));
   DISEASES.forEach((disease, i) => entities.push(ent(disease, "disease", `MONDO:${3706 + i * 47}`, rnd(0.79, 0.94))));
+  // Generate many more unique entities for a fully-populated graph.
+  let k = 0;
+  for (let i = 0; i < 700; i++) {
+    entities.push(ent(genGeneName(i), "gene", `HGNC:${5000 + i * 13}`, rnd(0.86, 0.99)));
+    entities.push(ent(genDrugName(i), "drug", `CHEBI:${80000 + i * 17}`, rnd(0.8, 0.97)));
+    entities.push(ent(genDiseaseName(i), "disease", `MONDO:${9000 + i * 23}`, rnd(0.76, 0.95)));
+    k++;
+  }
   return entities;
 }
 
 function makeRelations() {
   const relations: Array<Record<string, unknown>> = [];
-  let idx = 0;
+  const pool: Array<{ text: string; type: string }> = [
+    ...DRUGS.map((t) => ({ text: t, type: "drug" })),
+    ...GENES.map((t) => ({ text: t, type: "gene" })),
+    ...DISEASES.map((t) => ({ text: t, type: "disease" })),
+  ];
   for (let i = 0; i < 100; i++) {
-    const drug = DRUGS[i % DRUGS.length];
-    const gene = GENES[(i * 5) % GENES.length];
-    const disease = DISEASES[(i * 7) % DISEASES.length];
-    const pred = RELATION_PREDICATES[(i * 3) % RELATION_PREDICATES.length];
-    const [subject, object] = pred === "treats" || pred === "associated_with"
-      ? [pred === "treats" ? drug : gene, disease]
-      : [drug, gene];
-    relations.push({
-      id: uid(`rel${idx}`),
-      subjectText: subject,
-      predicate: pred,
-      objectText: object,
-      confidence: Math.round((70 + ((i * 19) % 30)) / 100 * 100) / 100,
-      evidence: "literature co-occurrence",
-      createdAt: daysAgo(idx % 8),
-    });
-    idx++;
+    relations.push(makeRel(i, pool));
+  }
+  for (let i = 0; i < 3000; i++) {
+    relations.push(makeRel(i + 100, pool, true));
   }
   return relations;
+}
+
+function makeRel(i: number, pool: Array<{ text: string; type: string }>, synthetic = false) {
+  const pred = RELATION_PREDICATES[(i * 3) % RELATION_PREDICATES.length];
+  const subject = synthetic ? genNoun(i) : pool[i % pool.length].text;
+  const object = synthetic ? genNoun(i + 37) : pool[(i * 7) % pool.length].text;
+  return {
+    id: uid(`rel${i}`),
+    subjectText: subject,
+    predicate: pred,
+    objectText: object,
+    confidence: Math.round((70 + ((i * 19) % 30)) / 100 * 100) / 100,
+    evidence: "literature co-occurrence",
+    createdAt: daysAgo(i % 12),
+  };
 }
 
 // helper shims ---------------------------------------------------------------
@@ -329,6 +338,22 @@ function note(type: string): string {
     Urine: "Urinary sediment specimen",
   };
   return tn[type] ?? "Biobank accession";
+}
+
+function genGeneName(i: number): string {
+  return `GENE${GENE_SUFFIX[i % GENE_SUFFIX.length]}${Math.floor(i / GENE_SUFFIX.length)}`;
+}
+
+function genDrugName(i: number): string {
+  return DRUG_PREFIX[i % DRUG_PREFIX.length] + DRUG_SUFFIX[(i * 7) % DRUG_SUFFIX.length];
+}
+
+function genDiseaseName(i: number): string {
+  return DISEASE_MOD[i % DISEASE_MOD.length] + DISEASE_N[(i * 3) % DISEASE_N.length] + (i % 4 === 0 ? ` type ${i}` : "");
+}
+
+function genNoun(i: number): string {
+  return genDiseaseName(i);
 }
 
 export function withIds(list: Array<Record<string, unknown>>): Row[] {
