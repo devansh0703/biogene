@@ -13,7 +13,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold uppercase tracking-tight">System Dashboard</h1>
-        <p className="text-muted-foreground font-mono mt-2">BioForge Unified Bioinformatics Platform</p>
+        <p className="text-muted-foreground font-mono mt-2">BioGene Unified Bioinformatics Platform</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

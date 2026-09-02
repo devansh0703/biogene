@@ -1,6 +1,6 @@
 {
   "buildCommand": "bash scripts/vercel-build.sh",
-  "outputDirectory": "artifacts/bioforge/dist/public",
+  "outputDirectory": "artifacts/biogene/dist/public",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": null,
   "rewrites": [

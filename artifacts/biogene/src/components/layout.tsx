@@ -26,7 +26,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <Sidebar className="border-r border-border bg-card w-64 flex-shrink-0">
           <SidebarContent>
             <div className="p-4 border-b border-border">
-              <h1 className="text-xl font-bold tracking-tight uppercase">BioForge</h1>
+              <h1 className="text-xl font-bold tracking-tight uppercase">BioGene</h1>
               <p className="text-xs text-muted-foreground mt-1 uppercase">v0.1.0 // System Active</p>
             </div>
             <SidebarGroup>

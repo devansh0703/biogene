@@ -1,12 +1,12 @@
-# BioForge — Unified Bioinformatics Platform
+# BioGene — Unified Bioinformatics Platform
 
 ## Overview
 
-BioForge is a full-stack bioinformatics web application with 8 scientific modules, all powered by real external APIs. Monochrome black/white neobrutalist UI.
+BioGene is a full-stack bioinformatics web application with 8 scientific modules, all powered by real external APIs. Monochrome black/white neobrutalist UI.
 
 ## Architecture
 
-- **Frontend**: React + Vite (`artifacts/bioforge`) — preview at `/`
+- **Frontend**: React + Vite (`artifacts/biogene`) — preview at `/`
 - **Backend**: Express 5 API server (`artifacts/api-server`) — at `/api`
 - **Database**: PostgreSQL + Drizzle ORM (`lib/db`)
 - **OpenAPI spec**: `lib/api-spec/openapi.yaml` → codegen via Orval

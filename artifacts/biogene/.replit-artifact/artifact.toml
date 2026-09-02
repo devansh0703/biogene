@@ -1,8 +1,8 @@
 kind = "web"
 previewPath = "/"
-title = "BioForge"
+title = "BioGene"
 version = "1.0.0"
-id = "artifacts/bioforge"
+id = "artifacts/biogene"
 router = "path"
 
 [[integratedSkills]]
@@ -15,11 +15,11 @@ paths = [ "/" ]
 localPort = 20899
 
 [services.development]
-run = "pnpm --filter @workspace/bioforge run dev"
+run = "pnpm --filter @workspace/biogene run dev"
 
 [services.production]
-build = [ "pnpm", "--filter", "@workspace/bioforge", "run", "build" ]
-publicDir = "artifacts/bioforge/dist/public"
+build = [ "pnpm", "--filter", "@workspace/biogene", "run", "build" ]
+publicDir = "artifacts/biogene/dist/public"
 serve = "static"
 
 [[services.production.rewrites]]

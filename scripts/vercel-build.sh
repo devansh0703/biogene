@@ -8,6 +8,6 @@ echo "==> Building frontend (API serverless function compiles its own source via
 export PORT=3000
 export BASE_PATH="/"
 export NODE_ENV=production
-pnpm --filter @workspace/bioforge run build
+pnpm --filter @workspace/biogene run build
 
 echo "==> Build complete!"
