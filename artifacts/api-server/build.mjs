@@ -14,8 +14,7 @@ async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true });
 
-  await esbuild({
-    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+  const sharedOptions = {
     platform: "node",
     bundle: true,
     format: "esm",
@@ -117,6 +116,19 @@ globalThis.__filename = __bannerUrl.fileURLToPath(import.meta.url);
 globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
     `,
     },
+  };
+
+  // Standalone server (src/index.ts calls app.listen / needs PORT)
+  await esbuild({
+    ...sharedOptions,
+    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+  });
+
+  // Serverless (Vercel) entry: exports the express app without calling listen()
+  await esbuild({
+    ...sharedOptions,
+    outdir: path.resolve(distDir, "vercel"),
+    entryPoints: [path.resolve(artifactDir, "vercel.ts")],
   });
 }
 
