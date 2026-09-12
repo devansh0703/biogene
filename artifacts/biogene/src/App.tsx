@@ -15,6 +15,7 @@ import Genome from "@/pages/genome";
 import Lims from "@/pages/lims";
 import Drugs from "@/pages/drugs";
 import Transcriptomics from "@/pages/transcriptomics";
+import RagChat from "@/pages/rag";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,6 +31,7 @@ function Router() {
     <AppLayout>
       <Switch>
         <Route path="/" component={Dashboard} />
+        <Route path="/rag" component={RagChat} />
         <Route path="/search" component={GlobalSearch} />
         <Route path="/genomics" component={Genomics} />
         <Route path="/protein" component={Protein} />

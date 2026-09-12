@@ -9,11 +9,13 @@ import limsRouter from "./lims";
 import drugsRouter from "./drugs";
 import transcriptomicsRouter from "./transcriptomics";
 import searchRouter from "./search";
+import ragRouter from "./rag";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(searchRouter);
+router.use(ragRouter);
 router.use(genomicsRouter);
 router.use(proteinRouter);
 router.use(crisprRouter);

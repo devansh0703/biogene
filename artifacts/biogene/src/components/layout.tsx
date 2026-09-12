@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Activity, Dna, Database, Microchip, Library, FlaskConical, Stethoscope, LineChart, Search } from "lucide-react";
+import { Activity, Dna, Database, Microchip, Library, FlaskConical, Stethoscope, LineChart, Search, MessagesSquare } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel,
   SidebarGroupContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider,
@@ -7,6 +7,7 @@ import {
 
 const NAV_ITEMS = [
   { title: "Dashboard", url: "/", icon: Activity },
+  { title: "Research Chat", url: "/rag", icon: MessagesSquare },
   { title: "Global Search", url: "/search", icon: Search },
   { title: "Variant Analysis", url: "/genomics", icon: Dna },
   { title: "Protein Structure", url: "/protein", icon: Microchip },

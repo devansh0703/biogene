@@ -24,6 +24,7 @@ import type {
   CompoundSearchResponse,
   Conformer3d,
   CreateExperimentBody,
+  CreateRagTopicBody,
   CreateSampleBody,
   CreateTranscriptomicsJobBody,
   CrisprDesignBody,
@@ -61,6 +62,10 @@ import type {
   ProteinSearchResponse,
   ProteinStructure,
   PubmedSearchResponse,
+  RagCapabilities,
+  RagChatBody,
+  RagJob,
+  RagTopicsResponse,
   RelatedProteinsResponse,
   Sample,
   SampleListResponse,
@@ -3944,6 +3949,500 @@ export function useGetSearchFacets<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Which RAG services are configured (weaviate/firecrawl/llm/rerank)
+ */
+export const getGetRagCapabilitiesUrl = () => {
+  return `/api/rag/capabilities`;
+};
+
+export const getRagCapabilities = async (
+  options?: RequestInit,
+): Promise<RagCapabilities> => {
+  return customFetch<RagCapabilities>(getGetRagCapabilitiesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetRagCapabilitiesQueryKey = () => {
+  return [`/api/rag/capabilities`] as const;
+};
+
+export const getGetRagCapabilitiesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getRagCapabilities>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getRagCapabilities>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetRagCapabilitiesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getRagCapabilities>>
+  > = ({ signal }) => getRagCapabilities({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getRagCapabilities>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetRagCapabilitiesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getRagCapabilities>>
+>;
+export type GetRagCapabilitiesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Which RAG services are configured (weaviate/firecrawl/llm/rerank)
+ */
+
+export function useGetRagCapabilities<
+  TData = Awaited<ReturnType<typeof getRagCapabilities>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getRagCapabilities>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetRagCapabilitiesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List indexed topics with source links and chunk counts
+ */
+export const getListRagTopicsUrl = () => {
+  return `/api/rag/topics`;
+};
+
+export const listRagTopics = async (
+  options?: RequestInit,
+): Promise<RagTopicsResponse> => {
+  return customFetch<RagTopicsResponse>(getListRagTopicsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListRagTopicsQueryKey = () => {
+  return [`/api/rag/topics`] as const;
+};
+
+export const getListRagTopicsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listRagTopics>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listRagTopics>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListRagTopicsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listRagTopics>>> = ({
+    signal,
+  }) => listRagTopics({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listRagTopics>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListRagTopicsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listRagTopics>>
+>;
+export type ListRagTopicsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List indexed topics with source links and chunk counts
+ */
+
+export function useListRagTopics<
+  TData = Awaited<ReturnType<typeof listRagTopics>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listRagTopics>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListRagTopicsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Start building a topic (BM25 discovery → Firecrawl scrape → embed → Weaviate)
+ */
+export const getCreateRagTopicUrl = () => {
+  return `/api/rag/topics`;
+};
+
+export const createRagTopic = async (
+  createRagTopicBody: CreateRagTopicBody,
+  options?: RequestInit,
+): Promise<RagJob> => {
+  return customFetch<RagJob>(getCreateRagTopicUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createRagTopicBody),
+  });
+};
+
+export const getCreateRagTopicMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createRagTopic>>,
+    TError,
+    { data: BodyType<CreateRagTopicBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createRagTopic>>,
+  TError,
+  { data: BodyType<CreateRagTopicBody> },
+  TContext
+> => {
+  const mutationKey = ["createRagTopic"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createRagTopic>>,
+    { data: BodyType<CreateRagTopicBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createRagTopic(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateRagTopicMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createRagTopic>>
+>;
+export type CreateRagTopicMutationBody = BodyType<CreateRagTopicBody>;
+export type CreateRagTopicMutationError = ErrorType<void>;
+
+/**
+ * @summary Start building a topic (BM25 discovery → Firecrawl scrape → embed → Weaviate)
+ */
+export const useCreateRagTopic = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createRagTopic>>,
+    TError,
+    { data: BodyType<CreateRagTopicBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createRagTopic>>,
+  TError,
+  { data: BodyType<CreateRagTopicBody> },
+  TContext
+> => {
+  return useMutation(getCreateRagTopicMutationOptions(options));
+};
+
+/**
+ * @summary Poll a topic build job
+ */
+export const getGetRagJobUrl = (jobId: string) => {
+  return `/api/rag/jobs/${jobId}`;
+};
+
+export const getRagJob = async (
+  jobId: string,
+  options?: RequestInit,
+): Promise<RagJob> => {
+  return customFetch<RagJob>(getGetRagJobUrl(jobId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetRagJobQueryKey = (jobId: string) => {
+  return [`/api/rag/jobs/${jobId}`] as const;
+};
+
+export const getGetRagJobQueryOptions = <
+  TData = Awaited<ReturnType<typeof getRagJob>>,
+  TError = ErrorType<void>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getRagJob>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetRagJobQueryKey(jobId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getRagJob>>> = ({
+    signal,
+  }) => getRagJob(jobId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!jobId,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof getRagJob>>, TError, TData> & {
+    queryKey: QueryKey;
+  };
+};
+
+export type GetRagJobQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getRagJob>>
+>;
+export type GetRagJobQueryError = ErrorType<void>;
+
+/**
+ * @summary Poll a topic build job
+ */
+
+export function useGetRagJob<
+  TData = Awaited<ReturnType<typeof getRagJob>>,
+  TError = ErrorType<void>,
+>(
+  jobId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getRagJob>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetRagJobQueryOptions(jobId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Delete a topic and its Weaviate collection
+ */
+export const getDeleteRagTopicUrl = (name: string) => {
+  return `/api/rag/topics/${name}`;
+};
+
+export const deleteRagTopic = async (
+  name: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteRagTopicUrl(name), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteRagTopicMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteRagTopic>>,
+    TError,
+    { name: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteRagTopic>>,
+  TError,
+  { name: string },
+  TContext
+> => {
+  const mutationKey = ["deleteRagTopic"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteRagTopic>>,
+    { name: string }
+  > = (props) => {
+    const { name } = props ?? {};
+
+    return deleteRagTopic(name, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteRagTopicMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteRagTopic>>
+>;
+
+export type DeleteRagTopicMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a topic and its Weaviate collection
+ */
+export const useDeleteRagTopic = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteRagTopic>>,
+    TError,
+    { name: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteRagTopic>>,
+  TError,
+  { name: string },
+  TContext
+> => {
+  return useMutation(getDeleteRagTopicMutationOptions(options));
+};
+
+/**
+ * Server-sent events stream. Events: `context` (citations + optional 3D structure),
+`token` (answer delta), `done` (final answer), `error`.
+
+ * @summary Streamed RAG answer (SSE) with reranked citations
+ */
+export const getRagChatUrl = () => {
+  return `/api/rag/chat`;
+};
+
+export const ragChat = async (
+  ragChatBody: RagChatBody,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getRagChatUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(ragChatBody),
+  });
+};
+
+export const getRagChatMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof ragChat>>,
+    TError,
+    { data: BodyType<RagChatBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof ragChat>>,
+  TError,
+  { data: BodyType<RagChatBody> },
+  TContext
+> => {
+  const mutationKey = ["ragChat"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof ragChat>>,
+    { data: BodyType<RagChatBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return ragChat(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RagChatMutationResult = NonNullable<
+  Awaited<ReturnType<typeof ragChat>>
+>;
+export type RagChatMutationBody = BodyType<RagChatBody>;
+export type RagChatMutationError = ErrorType<void>;
+
+/**
+ * @summary Streamed RAG answer (SSE) with reranked citations
+ */
+export const useRagChat = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof ragChat>>,
+    TError,
+    { data: BodyType<RagChatBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof ragChat>>,
+  TError,
+  { data: BodyType<RagChatBody> },
+  TContext
+> => {
+  return useMutation(getRagChatMutationOptions(options));
+};
 
 /**
  * @summary Cross-dataset overview with chart data for the dashboard

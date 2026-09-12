@@ -27,6 +27,8 @@ tags:
     description: RNA-Seq and expression analysis
   - name: search
     description: Global natural-language search and cross-dataset stats
+  - name: rag
+    description: Firecrawl + Weaviate + NVIDIA retrieval-augmented chat over live web sources
 
 paths:
   /healthz:
@@ -959,6 +961,138 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SearchFacetsResponse"
+
+  # ── RAG (Firecrawl → Weaviate → NVIDIA) ───────────────────────────────────
+  /rag/capabilities:
+    get:
+      operationId: getRagCapabilities
+      tags: [rag]
+      summary: Which RAG services are configured (weaviate/firecrawl/llm/rerank)
+      responses:
+        "200":
+          description: Capability flags
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagCapabilities"
+
+  /rag/topics:
+    get:
+      operationId: listRagTopics
+      tags: [rag]
+      summary: List indexed topics with source links and chunk counts
+      responses:
+        "200":
+          description: Topic summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagTopicsResponse"
+    post:
+      operationId: createRagTopic
+      tags: [rag]
+      summary: Start building a topic (BM25 discovery → Firecrawl scrape → embed → Weaviate)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topic]
+              properties:
+                topic:
+                  type: string
+                  maxLength: 120
+      responses:
+        "202":
+          description: Build job started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagJob"
+        "400":
+          description: Invalid topic
+        "503":
+          description: RAG services not configured
+
+  /rag/jobs/{jobId}:
+    get:
+      operationId: getRagJob
+      tags: [rag]
+      summary: Poll a topic build job
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagJob"
+        "404":
+          description: Unknown job
+
+  /rag/topics/{name}:
+    delete:
+      operationId: deleteRagTopic
+      tags: [rag]
+      summary: Delete a topic and its Weaviate collection
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+
+  /rag/chat:
+    post:
+      operationId: ragChat
+      tags: [rag]
+      summary: Streamed RAG answer (SSE) with reranked citations
+      description: |
+        Server-sent events stream. Events: `context` (citations + optional 3D structure),
+        `token` (answer delta), `done` (final answer), `error`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topic, question]
+              properties:
+                topic:
+                  type: string
+                question:
+                  type: string
+                history:
+                  type: array
+                  description: Prior turns for conversational context
+                  items:
+                    type: object
+                    properties:
+                      role:
+                        type: string
+                        enum: [user, assistant]
+                      content:
+                        type: string
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "404":
+          description: Topic not indexed yet
+        "503":
+          description: RAG services not configured
 
   /stats/overview:
     get:
@@ -2811,3 +2945,113 @@ components:
               type: string
           required: [entryId, cifUrl, pdbUrl, meanPlddt]
       required: [targetChemblId, alphafold]
+
+    RagCapabilities:
+      type: object
+      properties:
+        weaviate:
+          type: boolean
+        firecrawl:
+          type: boolean
+        jinaFallback:
+          type: boolean
+        llm:
+          type: boolean
+        rerank:
+          type: boolean
+        embedding:
+          type: boolean
+        chatModel:
+          type: string
+        scrapingMode:
+          type: string
+          enum: [firecrawl, jina-reader, none]
+      required: [weaviate, firecrawl, jinaFallback, llm, rerank, embedding, chatModel, scrapingMode]
+
+    RagSourceLink:
+      type: object
+      properties:
+        source:
+          type: string
+          description: Dataset the page belongs to (PubMed, ChEMBL, RCSB PDB, Wikipedia, UniProt, GeneCards)
+        url:
+          type: string
+        title:
+          type: string
+      required: [source, url, title]
+
+    RagTopicHit:
+      type: object
+      properties:
+        collection:
+          type: string
+        rowId:
+          type: string
+        score:
+          type: number
+        label:
+          type: string
+        detail:
+          type: string
+      required: [collection, rowId, score, label, detail]
+
+    RagJob:
+      type: object
+      properties:
+        id:
+          type: string
+        topic:
+          type: string
+        status:
+          type: string
+          enum: [queued, discovering, scraping, embedding, indexing, ready, failed]
+        stage:
+          type: string
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/RagSourceLink"
+        hits:
+          type: array
+          items:
+            $ref: "#/components/schemas/RagTopicHit"
+        genes:
+          type: array
+          items:
+            type: string
+        pagesScraped:
+          type: integer
+        chunksIndexed:
+          type: integer
+        error:
+          type: string
+          nullable: true
+        startedAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, topic, status, stage, sources, hits, genes, pagesScraped, chunksIndexed, startedAt, updatedAt]
+
+    RagTopicsResponse:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            type: object
+            properties:
+              topic:
+                type: string
+              collection:
+                type: string
+              chunks:
+                type: integer
+              sources:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RagSourceLink"
+              fetchedAt:
+                type: string
+                nullable: true
+            required: [topic, collection, chunks, sources]
+      required: [topics]

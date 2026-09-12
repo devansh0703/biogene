@@ -1,13 +1,14 @@
 import { Link, useLocation } from "wouter";
 import {
   useGetStatsOverview, useGetLimsStats, useGetDrugDashboardStats, useGetGenomicsStats,
-  getGetSearchSchemaQueryOptions,
+  getGetSearchSchemaQueryOptions, getGetRagCapabilitiesQueryOptions, getListRagTopicsQueryOptions,
 } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import { CountBarChart, CountPieChart, TimelineChart, ChartCard, type Count } from "@/components/charts";
-import { Activity, Dna, Database, Microchip, Library, FlaskConical, Stethoscope, LineChart, Search } from "lucide-react";
+import { Activity, Dna, Database, Microchip, Library, FlaskConical, Stethoscope, LineChart, Search, MessagesSquare } from "lucide-react";
 
 const MODULE_LINKS: Record<string, string> = {
   genomicsJobs: "/genomics",
@@ -27,6 +28,8 @@ export default function Dashboard() {
   const { data: drugStats, isLoading: drugLoading } = useGetDrugDashboardStats();
   const { data: genomicsStats, isLoading: genomicsLoading } = useGetGenomicsStats();
   const { data: searchSchema } = useQuery(getGetSearchSchemaQueryOptions());
+  const { data: ragCaps } = useQuery(getGetRagCapabilitiesQueryOptions());
+  const { data: ragTopics } = useQuery(getListRagTopicsQueryOptions());
 
   const [, navigate] = useLocation();
   const datasets = Object.entries(overview?.datasets ?? {});
@@ -58,6 +61,33 @@ export default function Dashboard() {
           <Search className="h-4 w-4" /> Global Search
         </Link>
       </div>
+
+      {/* RAG research assistant strip */}
+      <Link href="/rag">
+        <Card className="rounded-none border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer" data-testid="dashboard-rag-strip">
+          <CardContent className="p-4 flex items-center gap-4 flex-wrap">
+            <MessagesSquare className="h-6 w-6 text-primary flex-shrink-0" />
+            <div className="flex-1 min-w-[200px]">
+              <p className="text-sm font-bold uppercase tracking-wide">Research Chat — RAG over live sources</p>
+              <p className="text-[11px] text-muted-foreground font-mono uppercase">
+                BM25 discovery → {ragCaps?.scrapingMode === "firecrawl" ? "firecrawl" : "firecrawl/jina"} scrape → nvidia embed → weaviate → jina rerank → nemotron chat
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {(ragTopics?.topics ?? []).slice(0, 4).map((t) => (
+                <Badge key={t.collection} variant="outline" className="font-mono text-[10px]">
+                  {t.topic} · {t.chunks}
+                </Badge>
+              ))}
+              {ragCaps?.weaviate && ragCaps?.llm ? (
+                <Badge className="bg-primary text-primary-foreground font-mono text-[10px]">OPEN</Badge>
+              ) : (
+                <Badge variant="outline" className="text-amber-400 border-amber-400/40 font-mono text-[10px]">CONFIG MISSING</Badge>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
 
       {/* Cross-dataset totals */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">

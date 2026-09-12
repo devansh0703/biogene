@@ -1348,6 +1348,129 @@ export const GetSearchFacetsResponse = zod.object({
 });
 
 /**
+ * @summary Which RAG services are configured (weaviate/firecrawl/llm/rerank)
+ */
+export const GetRagCapabilitiesResponse = zod.object({
+  weaviate: zod.boolean(),
+  firecrawl: zod.boolean(),
+  jinaFallback: zod.boolean(),
+  llm: zod.boolean(),
+  rerank: zod.boolean(),
+  embedding: zod.boolean(),
+  chatModel: zod.string(),
+  scrapingMode: zod.enum(["firecrawl", "jina-reader", "none"]),
+});
+
+/**
+ * @summary List indexed topics with source links and chunk counts
+ */
+export const ListRagTopicsResponse = zod.object({
+  topics: zod.array(
+    zod.object({
+      topic: zod.string(),
+      collection: zod.string(),
+      chunks: zod.number(),
+      sources: zod.array(
+        zod.object({
+          source: zod
+            .string()
+            .describe(
+              "Dataset the page belongs to (PubMed, ChEMBL, RCSB PDB, Wikipedia, UniProt, GeneCards)",
+            ),
+          url: zod.string(),
+          title: zod.string(),
+        }),
+      ),
+      fetchedAt: zod.string().nullish(),
+    }),
+  ),
+});
+
+/**
+ * @summary Start building a topic (BM25 discovery → Firecrawl scrape → embed → Weaviate)
+ */
+export const createRagTopicBodyTopicMax = 120;
+
+export const CreateRagTopicBody = zod.object({
+  topic: zod.string().max(createRagTopicBodyTopicMax),
+});
+
+/**
+ * @summary Poll a topic build job
+ */
+export const GetRagJobParams = zod.object({
+  jobId: zod.coerce.string(),
+});
+
+export const GetRagJobResponse = zod.object({
+  id: zod.string(),
+  topic: zod.string(),
+  status: zod.enum([
+    "queued",
+    "discovering",
+    "scraping",
+    "embedding",
+    "indexing",
+    "ready",
+    "failed",
+  ]),
+  stage: zod.string(),
+  sources: zod.array(
+    zod.object({
+      source: zod
+        .string()
+        .describe(
+          "Dataset the page belongs to (PubMed, ChEMBL, RCSB PDB, Wikipedia, UniProt, GeneCards)",
+        ),
+      url: zod.string(),
+      title: zod.string(),
+    }),
+  ),
+  hits: zod.array(
+    zod.object({
+      collection: zod.string(),
+      rowId: zod.string(),
+      score: zod.number(),
+      label: zod.string(),
+      detail: zod.string(),
+    }),
+  ),
+  genes: zod.array(zod.string()),
+  pagesScraped: zod.number(),
+  chunksIndexed: zod.number(),
+  error: zod.string().nullish(),
+  startedAt: zod.string(),
+  updatedAt: zod.string(),
+});
+
+/**
+ * @summary Delete a topic and its Weaviate collection
+ */
+export const DeleteRagTopicParams = zod.object({
+  name: zod.coerce.string(),
+});
+
+/**
+ * Server-sent events stream. Events: `context` (citations + optional 3D structure),
+`token` (answer delta), `done` (final answer), `error`.
+
+ * @summary Streamed RAG answer (SSE) with reranked citations
+ */
+export const RagChatBody = zod.object({
+  topic: zod.string(),
+  question: zod.string(),
+  history: zod
+    .array(
+      zod.object({
+        role: zod.enum(["user", "assistant"]).optional(),
+        content: zod.string().optional(),
+      }),
+    )
+    .optional()
+    .describe("Prior turns for conversational context"),
+});
+
+/**
  * @summary Cross-dataset overview with chart data for the dashboard
  */
 export const GetStatsOverviewResponse = zod.object({

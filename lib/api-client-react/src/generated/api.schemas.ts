@@ -919,6 +919,80 @@ export interface TargetAlphafoldResponse {
   alphafold: TargetAlphafoldResponseAlphafold;
 }
 
+export type RagCapabilitiesScrapingMode =
+  (typeof RagCapabilitiesScrapingMode)[keyof typeof RagCapabilitiesScrapingMode];
+
+export const RagCapabilitiesScrapingMode = {
+  firecrawl: "firecrawl",
+  "jina-reader": "jina-reader",
+  none: "none",
+} as const;
+
+export interface RagCapabilities {
+  weaviate: boolean;
+  firecrawl: boolean;
+  jinaFallback: boolean;
+  llm: boolean;
+  rerank: boolean;
+  embedding: boolean;
+  chatModel: string;
+  scrapingMode: RagCapabilitiesScrapingMode;
+}
+
+export interface RagSourceLink {
+  /** Dataset the page belongs to (PubMed, ChEMBL, RCSB PDB, Wikipedia, UniProt, GeneCards) */
+  source: string;
+  url: string;
+  title: string;
+}
+
+export interface RagTopicHit {
+  collection: string;
+  rowId: string;
+  score: number;
+  label: string;
+  detail: string;
+}
+
+export type RagJobStatus = (typeof RagJobStatus)[keyof typeof RagJobStatus];
+
+export const RagJobStatus = {
+  queued: "queued",
+  discovering: "discovering",
+  scraping: "scraping",
+  embedding: "embedding",
+  indexing: "indexing",
+  ready: "ready",
+  failed: "failed",
+} as const;
+
+export interface RagJob {
+  id: string;
+  topic: string;
+  status: RagJobStatus;
+  stage: string;
+  sources: RagSourceLink[];
+  hits: RagTopicHit[];
+  genes: string[];
+  pagesScraped: number;
+  chunksIndexed: number;
+  error?: string | null;
+  startedAt: string;
+  updatedAt: string;
+}
+
+export type RagTopicsResponseTopicsItem = {
+  topic: string;
+  collection: string;
+  chunks: number;
+  sources: RagSourceLink[];
+  fetchedAt?: string | null;
+};
+
+export interface RagTopicsResponse {
+  topics: RagTopicsResponseTopicsItem[];
+}
+
 export type ListVariantsParams = {
   jobId?: string;
   chromosome?: string;
@@ -1019,4 +1093,29 @@ export type GetSearchFacetsParams = {
   collections?: string;
   q?: string;
   limit?: number;
+};
+
+export type CreateRagTopicBody = {
+  /** @maxLength 120 */
+  topic: string;
+};
+
+export type RagChatBodyHistoryItemRole =
+  (typeof RagChatBodyHistoryItemRole)[keyof typeof RagChatBodyHistoryItemRole];
+
+export const RagChatBodyHistoryItemRole = {
+  user: "user",
+  assistant: "assistant",
+} as const;
+
+export type RagChatBodyHistoryItem = {
+  role?: RagChatBodyHistoryItemRole;
+  content?: string;
+};
+
+export type RagChatBody = {
+  topic: string;
+  question: string;
+  /** Prior turns for conversational context */
+  history?: RagChatBodyHistoryItem[];
 };
