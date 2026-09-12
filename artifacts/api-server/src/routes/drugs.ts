@@ -39,6 +39,19 @@ function num(v: string | number | undefined | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+interface ChEmblTargetDetail {
+  target_chembl_id: string;
+  pref_name: string | null;
+  target_type: string | null;
+  organism: string | null;
+  target_components?: Array<{
+    accession?: string;
+    component_id?: number;
+    component_description?: string;
+    target_component_synonyms?: Array<{ syn_type: string; component_synonym: string }>;
+  }> | null;
+}
+
 function mapMolecule(m: ChembloMolecule) {
   const props = m.molecule_properties ?? null;
   const synonyms = (m.molecule_synonyms ?? []).filter((s) => s.molecule_synonym).map((s) => s.molecule_synonym);
@@ -345,6 +358,119 @@ router.get("/drugs/:chemblId/conformer3d", async (req, res, next) => {
       pubchemUrl: `https://pubchem.ncbi.nlm.nih.gov/compound/${cid}`,
       molecularFormula: (propTable?.MolecularFormula as string) ?? molecule.molecularFormula,
       molecularWeight: (propTable?.MolecularWeight as string) ?? (molecule.molecularWeight != null ? String(molecule.molecularWeight) : null),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// AlphaFold predicted structure for a ChEMBL target. Resolves the target's
+// UniProt accession (from the ChEMBL target record) to the live AlphaFold DB
+// prediction, returning model URLs + confidence metadata. The frontend renders
+// the mmCIF/PDB in NGL with pLDDT coloring.
+// ---------------------------------------------------------------------------
+
+interface AlphaFoldPrediction {
+  entryId: string;
+  gene: string;
+  uniprotAccession: string;
+  uniprotDescription: string;
+  organismScientificName: string;
+  sequenceLength?: number;
+  sequenceStart?: number;
+  sequenceEnd?: number;
+  globalMetricValue: number; // mean pLDDT (0-100)
+  fractionPlddtVeryLow: number;
+  fractionPlddtLow: number;
+  fractionPlddtConfident: number;
+  fractionPlddtVeryHigh: number;
+  latestVersion: number;
+  modelCreatedDate: string;
+  cifUrl: string;
+  pdbUrl: string;
+  bcifUrl: string;
+  plddtDocUrl: string;
+}
+
+router.get("/drugs/targets/:targetChemblId/alphafold", async (req, res, next) => {
+  const { targetChemblId } = req.params;
+  try {
+    const upper = targetChemblId.toUpperCase();
+    const data = await chemblGet(`/target/${upper}`, 15000);
+    const target = data as unknown as ChEmblTargetDetail;
+    if (!target?.target_chembl_id) {
+      res.status(404).json({ error: `Target ${upper} not found in ChEMBL` });
+      return;
+    }
+
+    const comps = target.target_components ?? [];
+    // The UniProt accession lives on `component.accession` — the UNIPROT
+    // *synonyms* on this record are protein names, not accessions.
+    const uniprotIds = comps
+      .map((tc) => (tc.accession ?? "").trim())
+      .filter((a) => /^[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2}$/.test(a));
+    const uniprotId = uniprotIds[0] ?? null;
+    if (!uniprotId) {
+      res.json({
+        targetChemblId: upper,
+        targetName: target.pref_name ?? "",
+        uniprotId: null,
+        alphafold: null,
+        message: "Target has no UniProt mapping — no AlphaFold prediction available",
+      });
+      return;
+    }
+
+    const af = await fetchJsonOrNull<AlphaFoldPrediction | AlphaFoldPrediction[]>(
+      `https://alphafold.ebi.ac.uk/api/prediction/${encodeURIComponent(uniprotId)}`,
+      {
+        timeoutMs: 15000,
+        // AlphaFold DB rejects Node's default User-Agent with 403.
+        headers: {
+          "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+          Accept: "application/json",
+        },
+      },
+    );
+    const prediction = Array.isArray(af) ? af[0] : af;
+    if (!prediction?.cifUrl) {
+      res.json({
+        targetChemblId: upper,
+        targetName: target.pref_name ?? "",
+        uniprotId,
+        alphafold: null,
+        message: `No AlphaFold model for ${uniprotId} yet`,
+      });
+      return;
+    }
+
+    res.json({
+      targetChemblId: upper,
+      targetName: target.pref_name ?? "",
+      uniprotId,
+      alphafold: {
+        entryId: prediction.entryId,
+        gene: prediction.gene,
+        description: prediction.uniprotDescription,
+        organism: prediction.organismScientificName,
+        sequenceStart: prediction.sequenceStart ?? 1,
+        sequenceEnd: prediction.sequenceEnd,
+        meanPlddt: prediction.globalMetricValue,
+        confidenceBands: {
+          veryLow: prediction.fractionPlddtVeryLow,
+          low: prediction.fractionPlddtLow,
+          confident: prediction.fractionPlddtConfident,
+          veryHigh: prediction.fractionPlddtVeryHigh,
+        },
+        modelVersion: prediction.latestVersion,
+        modelDate: prediction.modelCreatedDate,
+        cifUrl: prediction.cifUrl,
+        pdbUrl: prediction.pdbUrl,
+        plddtDocUrl: prediction.plddtDocUrl,
+        alphafoldUrl: `https://alphafold.ebi.ac.uk/entry/${prediction.uniprotAccession}`,
+        uniprotUrl: `https://www.uniprot.org/uniprotkb/${prediction.uniprotAccession}/entry`,
+      },
     });
   } catch (err) {
     next(err);

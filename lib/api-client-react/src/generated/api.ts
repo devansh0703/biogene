@@ -18,6 +18,7 @@ import type {
 
 import type {
   AnnotatedVariant,
+  BodyMapResponse,
   Compound,
   CompoundActivitiesResponse,
   CompoundSearchResponse,
@@ -43,6 +44,7 @@ import type {
   GetGeneSequenceParams,
   GetGenomicRegionParams,
   GetGenomicsStatsParams,
+  GetGtexBodyMapParams,
   GetKnowledgeGraphParams,
   GetSearchFacetsParams,
   GetVariantSequenceContextParams,
@@ -74,6 +76,7 @@ import type {
   SequenceContextResponse,
   SpeciesListResponse,
   StatsOverview,
+  TargetAlphafoldResponse,
   TargetSearchResponse,
   TissueListResponse,
   TranscriptomicsJob,
@@ -3348,6 +3351,100 @@ export function useSearchGeneExpression<
 }
 
 /**
+ * @summary Gene expression across all GTEx tissues positioned on a 3D body map
+ */
+export const getGetGtexBodyMapUrl = (params: GetGtexBodyMapParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/transcriptomics/bodymap?${stringifiedParams}`
+    : `/api/transcriptomics/bodymap`;
+};
+
+export const getGtexBodyMap = async (
+  params: GetGtexBodyMapParams,
+  options?: RequestInit,
+): Promise<BodyMapResponse> => {
+  return customFetch<BodyMapResponse>(getGetGtexBodyMapUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGtexBodyMapQueryKey = (params?: GetGtexBodyMapParams) => {
+  return [`/api/transcriptomics/bodymap`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetGtexBodyMapQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGtexBodyMap>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetGtexBodyMapParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGtexBodyMap>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGtexBodyMapQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGtexBodyMap>>> = ({
+    signal,
+  }) => getGtexBodyMap(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGtexBodyMap>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGtexBodyMapQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGtexBodyMap>>
+>;
+export type GetGtexBodyMapQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Gene expression across all GTEx tissues positioned on a 3D body map
+ */
+
+export function useGetGtexBodyMap<
+  TData = Awaited<ReturnType<typeof getGtexBodyMap>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetGtexBodyMapParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGtexBodyMap>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGtexBodyMapQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary List RNA-Seq analysis jobs
  */
 export const getListTranscriptomicsJobsUrl = () => {
@@ -4153,6 +4250,101 @@ export function useGetRelatedProteins<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetRelatedProteinsQueryOptions(pdbId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary AlphaFold predicted structure for a ChEMBL target (via UniProt)
+ */
+export const getGetTargetAlphafoldUrl = (targetChemblId: string) => {
+  return `/api/drugs/targets/${targetChemblId}/alphafold`;
+};
+
+export const getTargetAlphafold = async (
+  targetChemblId: string,
+  options?: RequestInit,
+): Promise<TargetAlphafoldResponse> => {
+  return customFetch<TargetAlphafoldResponse>(
+    getGetTargetAlphafoldUrl(targetChemblId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetTargetAlphafoldQueryKey = (targetChemblId: string) => {
+  return [`/api/drugs/targets/${targetChemblId}/alphafold`] as const;
+};
+
+export const getGetTargetAlphafoldQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTargetAlphafold>>,
+  TError = ErrorType<unknown>,
+>(
+  targetChemblId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTargetAlphafold>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetTargetAlphafoldQueryKey(targetChemblId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTargetAlphafold>>
+  > = ({ signal }) =>
+    getTargetAlphafold(targetChemblId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!targetChemblId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTargetAlphafold>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTargetAlphafoldQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTargetAlphafold>>
+>;
+export type GetTargetAlphafoldQueryError = ErrorType<unknown>;
+
+/**
+ * @summary AlphaFold predicted structure for a ChEMBL target (via UniProt)
+ */
+
+export function useGetTargetAlphafold<
+  TData = Awaited<ReturnType<typeof getTargetAlphafold>>,
+  TError = ErrorType<unknown>,
+>(
+  targetChemblId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTargetAlphafold>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTargetAlphafoldQueryOptions(
+    targetChemblId,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

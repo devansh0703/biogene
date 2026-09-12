@@ -812,6 +812,25 @@ paths:
               schema:
                 $ref: "#/components/schemas/ExpressionSearchResponse"
 
+  /transcriptomics/bodymap:
+    get:
+      operationId: getGtexBodyMap
+      tags: [transcriptomics]
+      summary: Gene expression across all GTEx tissues positioned on a 3D body map
+      parameters:
+        - name: gene
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Body-map expression data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BodyMapResponse"
+
   /transcriptomics/jobs:
     get:
       operationId: listTranscriptomicsJobs
@@ -999,6 +1018,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RelatedProteinsResponse"
+
+  /drugs/targets/{targetChemblId}/alphafold:
+    get:
+      operationId: getTargetAlphafold
+      tags: [drugs]
+      summary: AlphaFold predicted structure for a ChEMBL target (via UniProt)
+      parameters:
+        - name: targetChemblId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: AlphaFold prediction metadata + model URLs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TargetAlphafoldResponse"
 
   /drugs/{chemblId}/conformer3d:
     get:
@@ -2664,3 +2702,112 @@ components:
         source:
           type: string
       required: [variant, sequence, leftFlank, refAllele, rightFlank, flank]
+
+    BodyMapResponse:
+      type: object
+      properties:
+        gene:
+          type: string
+        geneId:
+          type: string
+        maxTpm:
+          type: number
+        medianTpm:
+          type: number
+        organCount:
+          type: integer
+        unmappedTissues:
+          type: array
+          items:
+            type: string
+        organs:
+          type: array
+          items:
+            type: object
+            properties:
+              tissue:
+                type: string
+              tissueName:
+                type: string
+              tpm:
+                type: number
+              colorHex:
+                type: string
+              position:
+                type: object
+                properties:
+                  x:
+                    type: number
+                  y:
+                    type: number
+                  z:
+                    type: number
+                  size:
+                    type: number
+                required: [x, y, z, size]
+              mapped:
+                type: boolean
+              intensity:
+                type: number
+              radius:
+                type: number
+            required: [tissue, tissueName, tpm, position, mapped, intensity, radius]
+        gtexUrl:
+          type: string
+      required: [gene, geneId, maxTpm, organs]
+
+    TargetAlphafoldResponse:
+      type: object
+      properties:
+        targetChemblId:
+          type: string
+        targetName:
+          type: string
+        uniprotId:
+          type: string
+        message:
+          type: string
+        alphafold:
+          type: object
+          properties:
+            entryId:
+              type: string
+            gene:
+              type: string
+            description:
+              type: string
+            organism:
+              type: string
+            sequenceStart:
+              type: integer
+            sequenceEnd:
+              type: integer
+            meanPlddt:
+              type: number
+            confidenceBands:
+              type: object
+              properties:
+                veryLow:
+                  type: number
+                low:
+                  type: number
+                confident:
+                  type: number
+                veryHigh:
+                  type: number
+            modelVersion:
+              type: integer
+            modelDate:
+              type: string
+            cifUrl:
+              type: string
+            pdbUrl:
+              type: string
+            plddtDocUrl:
+              type: string
+            alphafoldUrl:
+              type: string
+            uniprotUrl:
+              type: string
+          required: [entryId, cifUrl, pdbUrl, meanPlddt]
+      required: [targetChemblId, alphafold]

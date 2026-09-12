@@ -857,6 +857,68 @@ export interface SequenceContextResponse {
   source?: string;
 }
 
+export type BodyMapResponseOrgansItemPosition = {
+  x: number;
+  y: number;
+  z: number;
+  size: number;
+};
+
+export type BodyMapResponseOrgansItem = {
+  tissue: string;
+  tissueName: string;
+  tpm: number;
+  colorHex?: string;
+  position: BodyMapResponseOrgansItemPosition;
+  mapped: boolean;
+  intensity: number;
+  radius: number;
+};
+
+export interface BodyMapResponse {
+  gene: string;
+  geneId: string;
+  maxTpm: number;
+  medianTpm?: number;
+  organCount?: number;
+  unmappedTissues?: string[];
+  organs: BodyMapResponseOrgansItem[];
+  gtexUrl?: string;
+}
+
+export type TargetAlphafoldResponseAlphafoldConfidenceBands = {
+  veryLow?: number;
+  low?: number;
+  confident?: number;
+  veryHigh?: number;
+};
+
+export type TargetAlphafoldResponseAlphafold = {
+  entryId: string;
+  gene?: string;
+  description?: string;
+  organism?: string;
+  sequenceStart?: number;
+  sequenceEnd?: number;
+  meanPlddt: number;
+  confidenceBands?: TargetAlphafoldResponseAlphafoldConfidenceBands;
+  modelVersion?: number;
+  modelDate?: string;
+  cifUrl: string;
+  pdbUrl: string;
+  plddtDocUrl?: string;
+  alphafoldUrl?: string;
+  uniprotUrl?: string;
+};
+
+export interface TargetAlphafoldResponse {
+  targetChemblId: string;
+  targetName?: string;
+  uniprotId?: string;
+  message?: string;
+  alphafold: TargetAlphafoldResponseAlphafold;
+}
+
 export type ListVariantsParams = {
   jobId?: string;
   chromosome?: string;
@@ -936,6 +998,10 @@ export type SearchTargetsParams = {
 export type SearchGeneExpressionParams = {
   gene: string;
   tissue?: string;
+};
+
+export type GetGtexBodyMapParams = {
+  gene: string;
 };
 
 export type GlobalSearchParams = {

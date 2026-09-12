@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   getSearchCompoundsQueryOptions, getGetCompoundQueryOptions, getGetCompoundActivitiesQueryOptions,
   getSearchTargetsQueryOptions, getGetDrugDashboardStatsQueryOptions, getGetCompoundConformer3dQueryOptions,
+  getGetTargetAlphafoldQueryOptions,
 } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import { useQueryParams } from "@/lib/api-url";
@@ -13,6 +14,87 @@ import { Badge } from "@/components/ui/badge";
 import { ChartCard, CountBarChart, HistogramChart, type Count } from "@/components/charts";
 import Molecule3D, { type ConformerAtom, type ConformerBond } from "@/components/molecule-3d";
 import { ExternalLink } from "lucide-react";
+
+interface NglStageType {
+  loadFile(url: string, params?: Record<string, unknown>): Promise<unknown>;
+  setSpin(spin: boolean): void;
+  autoView(): void;
+  dispose(): void;
+}
+
+/** NGL viewer for AlphaFold models with pLDDT (b-factor) coloring. */
+function AlphafoldViewer({ cifUrl, entryId }: { cifUrl: string; entryId: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<NglStageType | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    if (!containerRef.current || !cifUrl) return;
+    let mounted = true;
+    setStatus("loading");
+
+    (async () => {
+      try {
+        const NGL = await import("ngl");
+        if (!mounted || !containerRef.current) return;
+
+        if (stageRef.current) { stageRef.current.dispose(); stageRef.current = null; }
+
+        const stage = new (NGL as unknown as { Stage: new (el: HTMLElement, opts?: Record<string, unknown>) => NglStageType }).Stage(containerRef.current, {
+          backgroundColor: "black",
+          quality: "medium",
+        });
+        stageRef.current = stage;
+
+        await stage.loadFile(cifUrl, { defaultRepresentation: false }).then((comp: unknown) => {
+          const component = comp as {
+            addRepresentation(type: string, params?: Record<string, unknown>): unknown;
+            autoView(): void;
+          };
+          // AlphaFold b-factor column carries per-residue pLDDT:
+          // very low <50 orange, low <70 yellow, confident <90 cyan, very high ≥90 blue.
+          component.addRepresentation("cartoon", {
+            colorScheme: "bfactor",
+            colorScale: "RdYlBu",
+            colorDomain: [50, 90],
+            smoothSheet: true,
+          });
+          component.autoView();
+          if (mounted) setStatus("ready");
+        });
+        stage.setSpin(true);
+      } catch {
+        if (mounted) setStatus("error");
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      if (stageRef.current) { stageRef.current.dispose(); stageRef.current = null; }
+    };
+  }, [cifUrl, entryId]);
+
+  return (
+    <div className="relative w-full h-80 bg-black border border-border">
+      <div ref={containerRef} className="w-full h-full" />
+      {status === "loading" && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/80">
+          <p className="text-xs font-mono text-muted-foreground uppercase animate-pulse">Loading AlphaFold model…</p>
+        </div>
+      )}
+      {status === "error" && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/80">
+          <p className="text-xs font-mono text-muted-foreground uppercase">Failed to load model</p>
+        </div>
+      )}
+      {status === "ready" && (
+        <div className="absolute top-2 right-2 text-xs font-mono text-muted-foreground bg-black/50 px-2 py-1">
+          {entryId} // pLDDT COLORING
+        </div>
+      )}
+    </div>
+  );
+}
 
 const DEFAULT_COMPOUND_QUERY = "imatinib";
 const DEFAULT_TARGET_QUERY = "EGFR";
@@ -49,6 +131,7 @@ export default function Drugs() {
   const [searchTerm, setSearchTerm] = useState(urlParams["q"] ?? DEFAULT_COMPOUND_QUERY);
   const [targetQuery, setTargetQuery] = useState(urlParams["target"] ?? DEFAULT_TARGET_QUERY);
   const [targetSearchTerm, setTargetSearchTerm] = useState(urlParams["target"] ?? DEFAULT_TARGET_QUERY);
+  const [alphafoldTargetId, setAlphafoldTargetId] = useState<string | null>(null);
   const [selectedChemblId, setSelectedChemblId] = useState<string | null>(urlParams["chembl"] ?? null);
 
   const { data: statsData } = useQuery(getGetDrugDashboardStatsQueryOptions());
@@ -85,6 +168,32 @@ export default function Drugs() {
   );
   const conformer = conformerData as
     | { cid?: string; atoms?: ConformerAtom[]; bonds?: ConformerBond[]; pubchemUrl?: string; molecularFormula?: string; atomCount?: number }
+    | undefined;
+
+  // AlphaFold predicted structure for a selected ChEMBL target.
+  const { data: alphafoldData, isLoading: alphafoldLoading } = useQuery(
+    getGetTargetAlphafoldQueryOptions(alphafoldTargetId ?? "", {
+      query: { enabled: !!alphafoldTargetId, retry: false, queryKey: ["target-alphafold", alphafoldTargetId] },
+    }),
+  );
+  const alphafold = alphafoldData as
+    | {
+        targetChemblId?: string;
+        targetName?: string;
+        uniprotId?: string | null;
+        message?: string;
+        alphafold?: {
+          entryId: string;
+          gene: string;
+          description: string;
+          meanPlddt: number;
+          confidenceBands: { veryLow: number; low: number; confident: number; veryHigh: number };
+          modelVersion: number;
+          cifUrl: string;
+          alphafoldUrl: string;
+          uniprotUrl: string;
+        } | null;
+      }
     | undefined;
 
   useEffect(() => {
@@ -404,6 +513,78 @@ export default function Drugs() {
         </div>
       )}
 
+      {alphafoldTargetId && (
+        <Card className="rounded-none border-border bg-card">
+          <CardHeader>
+            <CardTitle className="text-sm uppercase flex items-center justify-between flex-wrap gap-2">
+              <span>AlphaFold Predicted Structure — {alphafoldTargetId}</span>
+              <div className="flex items-center gap-3">
+                {alphafold?.alphafold?.alphafoldUrl && (
+                  <a href={alphafold.alphafold.alphafoldUrl} target="_blank" rel="noreferrer" className="text-xs font-mono text-muted-foreground hover:text-white flex items-center gap-0.5">
+                    AlphaFold DB <ExternalLink className="h-2.5 w-2.5" />
+                  </a>
+                )}
+                <Button variant="ghost" size="sm" onClick={() => setAlphafoldTargetId(null)} className="rounded-none text-xs text-muted-foreground h-6">
+                  Close
+                </Button>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {alphafoldLoading ? (
+              <Skeleton className="h-80 rounded-none" />
+            ) : alphafold?.alphafold ? (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-2">
+                  <AlphafoldViewer cifUrl={alphafold.alphafold.cifUrl} entryId={alphafold.alphafold.entryId} />
+                </div>
+                <div className="font-mono text-xs space-y-3">
+                  <div>
+                    <p className="font-bold text-sm">{alphafold.alphafold.gene}</p>
+                    <p className="text-muted-foreground">{alphafold.alphafold.description}</p>
+                    <p className="text-muted-foreground mt-1">{alphafold.uniprotId} · v{alphafold.alphafold.modelVersion}</p>
+                  </div>
+                  <div className="border border-border p-2">
+                    <p className="text-muted-foreground uppercase mb-1">Mean pLDDT</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl font-bold">{alphafold.alphafold.meanPlddt.toFixed(1)}</span>
+                      <div className="flex-1 h-2 bg-white/10">
+                        <div
+                          className="h-2"
+                          style={{
+                            width: `${alphafold.alphafold.meanPlddt}%`,
+                            background: alphafold.alphafold.meanPlddt >= 90 ? "#0053d6" : alphafold.alphafold.meanPlddt >= 70 ? "#65cbf3" : "#ffdb13",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground uppercase mb-1">Confidence Bands</p>
+                    {([
+                      ["Very high (≥90)", alphafold.alphafold.confidenceBands.veryHigh, "#0053d6"],
+                      ["Confident (70–90)", alphafold.alphafold.confidenceBands.confident, "#65cbf3"],
+                      ["Low (50–70)", alphafold.alphafold.confidenceBands.low, "#ffdb13"],
+                      ["Very low (<50)", alphafold.alphafold.confidenceBands.veryLow, "#ff7d45"],
+                    ] as Array<[string, number, string]>).map(([label, frac, color]) => (
+                      <div key={label} className="flex items-center gap-2 mb-1">
+                        <span className="w-3 h-3 flex-shrink-0" style={{ background: color }} />
+                        <span className="flex-1">{label}</span>
+                        <span>{(frac * 100).toFixed(1)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs font-mono text-muted-foreground py-8 text-center">
+                {alphafold?.message ?? "No AlphaFold model available for this target"}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {((targetData as { targets?: unknown[] } | undefined)?.targets ?? []).length > 0 && (
         <Card className="rounded-none border-border bg-card">
           <CardHeader><CardTitle className="text-sm uppercase">Targets — "{targetSearchTerm}"</CardTitle></CardHeader>
@@ -415,9 +596,9 @@ export default function Drugs() {
                     <th className="text-left py-2 pr-4">ChEMBL ID</th>
                     <th className="text-left py-2 pr-4">Name</th>
                     <th className="text-left py-2 pr-4">Type</th>
-                    <th className="text-left py-2 pr-4">Organism</th>
-                    <th className="text-left py-2 pr-4">Gene</th>
-                    <th className="text-left py-2 pr-4">Link</th>
+                    <th className="text-left py-2 pr-4">Organism</th>                      <th className="text-left py-2 pr-4">Gene</th>
+                      <th className="text-left py-2 pr-4">AF Model</th>
+                      <th className="text-left py-2 pr-4">Link</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -428,6 +609,15 @@ export default function Drugs() {
                       <td className="py-2 pr-4 text-muted-foreground">{t.targetType}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{t.organism}</td>
                       <td className="py-2 pr-4">{(t.geneNames ?? []).join(", ") || "-"}</td>
+                      <td className="py-2 pr-4">
+                        <button
+                          onClick={() => setAlphafoldTargetId(alphafoldTargetId === t.targetChemblId ? null : t.targetChemblId)}
+                          className={`px-2 py-0.5 text-xs border font-mono transition-colors ${alphafoldTargetId === t.targetChemblId ? "bg-white text-black border-white" : "border-border text-muted-foreground hover:text-white"}`}
+                          title="View AlphaFold predicted structure"
+                        >
+                          AF
+                        </button>
+                      </td>
                       <td className="py-2 pr-4">
                         <a href={`https://www.ebi.ac.uk/chembl/target_report_card/${t.targetChemblId}/`} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-white flex items-center gap-0.5">
                           ChEMBL <ExternalLink className="h-2.5 w-2.5" />

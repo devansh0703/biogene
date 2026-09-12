@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   getSearchGeneExpressionQueryOptions, getListTissuesQueryOptions,
   getListTranscriptomicsJobsQueryOptions, useCreateTranscriptomicsJob,
+  getGetGtexBodyMapQueryOptions,
 } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import { useQueryParams } from "@/lib/api-url";
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ChartCard, HistogramChart, TimelineChart } from "@/components/charts";
+import BodyMap, { type BodyMapOrgan } from "@/components/body-map";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { ExternalLink } from "lucide-react";
 
@@ -44,6 +46,14 @@ export default function Transcriptomics() {
   const { data: jobsData, isLoading: jobsLoading, refetch: refetchJobs } = useQuery(
     getListTranscriptomicsJobsQueryOptions(),
   );
+  // 3D body map: all 54 GTEx tissues positioned on a schematic human body.
+  const { data: bodyMapData, isLoading: bodyMapLoading } = useQuery(
+    getGetGtexBodyMapQueryOptions(
+      { gene: geneSearchTerm },
+      { query: { enabled: !!geneSearchTerm, queryKey: ["bodymap", geneSearchTerm] } },
+    ),
+  );
+  const bodyOrgans = (bodyMapData?.organs ?? []) as unknown as BodyMapOrgan[];
   const createJobMutation = useCreateTranscriptomicsJob();
 
   const sortedExpression = [...(expressionData?.expressions ?? [])]
@@ -210,6 +220,27 @@ export default function Transcriptomics() {
           )}
         </CardContent>
       </Card>
+
+      {bodyMapLoading && <Skeleton className="h-[460px] rounded-none" />}
+      {!bodyMapLoading && bodyOrgans.length > 0 && (
+        <Card className="rounded-none border-border bg-card">
+          <CardHeader>
+            <CardTitle className="text-sm uppercase flex items-center justify-between flex-wrap gap-2">
+              <span>Expression Body Map — {bodyMapData?.gene ?? geneName} in 3D</span>
+              <span className="text-[10px] font-mono text-muted-foreground normal-case">
+                {bodyMapData?.organCount} GTEx tissues · max {Number(bodyMapData?.maxTpm ?? 0).toFixed(1)} TPM · drag to rotate
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <BodyMap
+              organs={bodyOrgans}
+              selectedTissue={tissueFilter || null}
+              onSelect={(tissue) => setTissueFilter(tissueFilter === tissue ? "" : tissue)}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {allSorted.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

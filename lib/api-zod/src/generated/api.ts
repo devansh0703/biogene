@@ -1195,6 +1195,40 @@ export const SearchGeneExpressionResponse = zod.object({
 });
 
 /**
+ * @summary Gene expression across all GTEx tissues positioned on a 3D body map
+ */
+export const GetGtexBodyMapQueryParams = zod.object({
+  gene: zod.coerce.string(),
+});
+
+export const GetGtexBodyMapResponse = zod.object({
+  gene: zod.string(),
+  geneId: zod.string(),
+  maxTpm: zod.number(),
+  medianTpm: zod.number().optional(),
+  organCount: zod.number().optional(),
+  unmappedTissues: zod.array(zod.string()).optional(),
+  organs: zod.array(
+    zod.object({
+      tissue: zod.string(),
+      tissueName: zod.string(),
+      tpm: zod.number(),
+      colorHex: zod.string().optional(),
+      position: zod.object({
+        x: zod.number(),
+        y: zod.number(),
+        z: zod.number(),
+        size: zod.number(),
+      }),
+      mapped: zod.boolean(),
+      intensity: zod.number(),
+      radius: zod.number(),
+    }),
+  ),
+  gtexUrl: zod.string().optional(),
+});
+
+/**
  * @summary List RNA-Seq analysis jobs
  */
 export const ListTranscriptomicsJobsResponse = zod.object({
@@ -1424,6 +1458,44 @@ export const GetRelatedProteinsResponse = zod.object({
       pdbUrl: zod.string().optional(),
     }),
   ),
+});
+
+/**
+ * @summary AlphaFold predicted structure for a ChEMBL target (via UniProt)
+ */
+export const GetTargetAlphafoldParams = zod.object({
+  targetChemblId: zod.coerce.string(),
+});
+
+export const GetTargetAlphafoldResponse = zod.object({
+  targetChemblId: zod.string(),
+  targetName: zod.string().optional(),
+  uniprotId: zod.string().optional(),
+  message: zod.string().optional(),
+  alphafold: zod.object({
+    entryId: zod.string(),
+    gene: zod.string().optional(),
+    description: zod.string().optional(),
+    organism: zod.string().optional(),
+    sequenceStart: zod.number().optional(),
+    sequenceEnd: zod.number().optional(),
+    meanPlddt: zod.number(),
+    confidenceBands: zod
+      .object({
+        veryLow: zod.number().optional(),
+        low: zod.number().optional(),
+        confident: zod.number().optional(),
+        veryHigh: zod.number().optional(),
+      })
+      .optional(),
+    modelVersion: zod.number().optional(),
+    modelDate: zod.string().optional(),
+    cifUrl: zod.string(),
+    pdbUrl: zod.string(),
+    plddtDocUrl: zod.string().optional(),
+    alphafoldUrl: zod.string().optional(),
+    uniprotUrl: zod.string().optional(),
+  }),
 });
 
 /**
