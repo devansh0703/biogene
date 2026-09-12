@@ -25,6 +25,8 @@ tags:
     description: Drug discovery and compound search
   - name: transcriptomics
     description: RNA-Seq and expression analysis
+  - name: search
+    description: Global natural-language search and cross-dataset stats
 
 paths:
   /healthz:
@@ -99,7 +101,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/GenomicsJob"
+                $ref: "#/components/schemas/GenomicsUploadResult"
 
   /genomics/variants/{variantId}/annotate:
     get:
@@ -119,6 +121,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AnnotatedVariant"
+
+  /genomics/variants/{variantId}/sequence-context:
+    get:
+      operationId: getVariantSequenceContext
+      tags: [genomics]
+      summary: Real reference bases around a variant (Ensembl GRCh38) for 3D helix view
+      parameters:
+        - name: variantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: flank
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Sequence context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SequenceContextResponse"
 
   /genomics/stats:
     get:
@@ -448,6 +475,17 @@ paths:
           schema:
             type: integer
             default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         "200":
           description: Samples list
@@ -539,12 +577,28 @@ paths:
           required: false
           schema:
             type: string
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
         - name: limit
           in: query
           required: false
           schema:
             type: integer
             default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
       responses:
         "200":
           description: Experiments list
@@ -801,6 +855,172 @@ paths:
               schema:
                 $ref: "#/components/schemas/TissueListResponse"
 
+  # ── Global Search Module ──────────────────────────────────────────────────────
+  /search:
+    get:
+      operationId: globalSearch
+      tags: [search]
+      summary: BM25 natural-language search across all datasets with field:value filters
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: collections
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated collection names to scope the search
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Ranked search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+
+  /search/schema:
+    get:
+      operationId: getSearchSchema
+      tags: [search]
+      summary: List collections, counts, and searchable fields
+      responses:
+        "200":
+          description: Search schema
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchSchemaResponse"
+
+  /search/facets:
+    get:
+      operationId: getSearchFacets
+      tags: [search]
+      summary: Facet counts for a field, optionally scoped by collection or query
+      parameters:
+        - name: field
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: collections
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 25
+      responses:
+        "200":
+          description: Facet counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchFacetsResponse"
+
+  /stats/overview:
+    get:
+      operationId: getStatsOverview
+      tags: [search]
+      summary: Cross-dataset overview with chart data for the dashboard
+      responses:
+        "200":
+          description: Overview stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsOverview"
+
+  # ── Species / Related endpoints ───────────────────────────────────────────────
+  /crispr/species:
+    get:
+      operationId: listCrisprSpecies
+      tags: [crispr]
+      summary: List all Ensembl species available for CRISPR design
+      responses:
+        "200":
+          description: Species list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpeciesListResponse"
+
+  /genome/species:
+    get:
+      operationId: listGenomeSpecies
+      tags: [genome-browser]
+      summary: List all Ensembl species available in the genome browser
+      responses:
+        "200":
+          description: Species list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpeciesListResponse"
+
+  /protein/{pdbId}/related:
+    get:
+      operationId: getRelatedProteins
+      tags: [protein]
+      summary: Structures in the same RCSB sequence-identity cluster
+      parameters:
+        - name: pdbId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Related structures
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RelatedProteinsResponse"
+
+  /drugs/{chemblId}/conformer3d:
+    get:
+      operationId: getCompoundConformer3d
+      tags: [drugs]
+      summary: Real 3D conformer (PubChem computed geometry) parsed to atoms + bonds
+      parameters:
+        - name: chemblId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Conformer with atom coordinates and bond list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conformer3d"
+        "404":
+          description: No conformer available
+
 components:
   schemas:
     HealthStatus:
@@ -858,6 +1078,10 @@ components:
         dbsnpAnnotation:
           type: object
           additionalProperties: true
+        externalUrls:
+          type: object
+          additionalProperties:
+            type: string
       required: [variant]
 
     VariantListResponse:
@@ -882,7 +1106,6 @@ components:
           type: string
         status:
           type: string
-          enum: [pending, processing, completed, failed]
         filename:
           type: string
         variantCount:
@@ -911,6 +1134,23 @@ components:
           type: string
           description: VCF file content as string
       required: [filename, content]
+
+    GenomicsUploadResult:
+      type: object
+      properties:
+        id:
+          type: string
+        filename:
+          type: string
+        status:
+          type: string
+        variantCount:
+          type: integer
+        annotatedCount:
+          type: integer
+        createdAt:
+          type: string
+      required: [id, filename, status, variantCount]
 
     GenomicsStats:
       type: object
@@ -949,6 +1189,36 @@ components:
             required: [consequence, count]
         recentJobs:
           type: integer
+        topGenes:
+          type: array
+          items:
+            type: object
+            properties:
+              gene:
+                type: string
+              count:
+                type: integer
+            required: [gene, count]
+        qualityHistogram:
+          type: array
+          items:
+            type: object
+            properties:
+              bucket:
+                type: string
+              count:
+                type: integer
+            required: [bucket, count]
+        alleleFrequencyHistogram:
+          type: array
+          items:
+            type: object
+            properties:
+              bucket:
+                type: string
+              count:
+                type: integer
+            required: [bucket, count]
       required: [totalVariants, byChromosome, bySignificance, byConsequence, recentJobs]
 
     # ── Protein Schemas ────────────────────────────────────────────────────────
@@ -967,6 +1237,14 @@ components:
           type: string
         depositionDate:
           type: string
+        releaseDate:
+          type: string
+        citationCount:
+          type: integer
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Citation"
         chains:
           type: integer
         atoms:
@@ -978,6 +1256,8 @@ components:
         uniprotId:
           type: string
         gene:
+          type: string
+        pdbUrl:
           type: string
       required: [pdbId, title]
 
@@ -1042,7 +1322,21 @@ components:
                   type: string
               ligand:
                 type: string
+              details:
+                type: string
             required: [siteId, residues]
+        uniprotId:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Citation"
+        citationCount:
+          type: integer
+        rcsbUrl:
+          type: string
+        pdbeUrl:
+          type: string
       required: [pdbId, title, downloadUrl, cifUrl]
 
     ProteinAnnotations:
@@ -1062,6 +1356,22 @@ components:
           type: array
           items:
             type: string
+        sequenceLength:
+          type: integer
+        featureCounts:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              count:
+                type: integer
+            required: [type, count]
+        uniprotUrl:
+          type: string
+        pdbeUrl:
+          type: string
         goTerms:
           type: array
           items:
@@ -1104,7 +1414,6 @@ components:
           type: integer
         strand:
           type: string
-          enum: ["+", "-"]
         score:
           type: number
         gcContent:
@@ -1145,6 +1454,8 @@ components:
           type: string
         geneName:
           type: string
+        species:
+          type: string
         totalCandidates:
           type: integer
         guides:
@@ -1164,6 +1475,8 @@ components:
           type: string
         ensemblId:
           type: string
+        species:
+          type: string
         chromosome:
           type: string
         start:
@@ -1172,6 +1485,10 @@ components:
           type: integer
         strand:
           type: integer
+        biotype:
+          type: string
+        description:
+          type: string
         sequence:
           type: string
         length:
@@ -1187,6 +1504,10 @@ components:
           type: string
         status:
           type: string
+        pamType:
+          type: string
+        sequenceLength:
+          type: integer
         guidesCount:
           type: integer
         createdAt:
@@ -1212,7 +1533,6 @@ components:
           type: string
         type:
           type: string
-          enum: [gene, disease, drug, protein, organism, mutation, pathway]
         normalizedId:
           type: string
         confidence:
@@ -1264,6 +1584,14 @@ components:
           type: object
           additionalProperties:
             type: integer
+        source:
+          type: string
+        pmid:
+          type: string
+        pubmedUrl:
+          type: string
+        note:
+          type: string
       required: [entities, relations, text]
 
     PubmedPaper:
@@ -1289,6 +1617,12 @@ components:
           type: array
           items:
             type: string
+        citationCount:
+          type: integer
+        pubmedUrl:
+          type: string
+        doiUrl:
+          type: string
       required: [pmid, title]
 
     PubmedSearchResponse:
@@ -1343,6 +1677,16 @@ components:
             $ref: "#/components/schemas/KnowledgeGraphEdge"
         totalDocuments:
           type: integer
+        entityTypeCounts:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              count:
+                type: integer
+            required: [type, count]
       required: [nodes, edges, totalDocuments]
 
     # ── Genome Browser Schemas ─────────────────────────────────────────────────
@@ -1367,6 +1711,12 @@ components:
           type: string
         description:
           type: string
+        organism:
+          type: string
+        ncbiGeneUrl:
+          type: string
+        ensemblUrl:
+          type: string
       required: [id, name, type, chromosome, start, end]
 
     GenomicSearchResponse:
@@ -1378,6 +1728,8 @@ components:
             $ref: "#/components/schemas/GenomicFeature"
         total:
           type: integer
+        species:
+          type: string
       required: [features, total]
 
     GenomicRegionData:
@@ -1389,6 +1741,8 @@ components:
           type: integer
         end:
           type: integer
+        species:
+          type: string
         genes:
           type: array
           items:
@@ -1408,6 +1762,10 @@ components:
                 type: string
               consequence:
                 type: string
+              mostSevere:
+                type: string
+              dbsnpUrl:
+                type: string
             required: [id, position, ref, alt]
         coverageData:
           type: array
@@ -1419,6 +1777,20 @@ components:
               coverage:
                 type: number
             required: [position, coverage]
+        gcContent:
+          type: number
+        sequenceLength:
+          type: integer
+        consequenceCounts:
+          type: array
+          items:
+            type: object
+            properties:
+              consequence:
+                type: string
+              count:
+                type: integer
+            required: [consequence, count]
       required: [chromosome, start, end, genes, variants]
 
     GenomeTrack:
@@ -1455,10 +1827,8 @@ components:
           type: string
         type:
           type: string
-          enum: [dna, rna, protein, tissue, cell_line, blood, other]
         status:
           type: string
-          enum: [active, depleted, archived, quarantine]
         concentration:
           type: number
         unit:
@@ -1499,7 +1869,6 @@ components:
           type: string
         type:
           type: string
-          enum: [dna, rna, protein, tissue, cell_line, blood, other]
         concentration:
           type: number
         unit:
@@ -1523,7 +1892,6 @@ components:
           type: string
         status:
           type: string
-          enum: [active, depleted, archived, quarantine]
         concentration:
           type: number
         volume:
@@ -1542,10 +1910,8 @@ components:
           type: string
         type:
           type: string
-          enum: [pcr, sequencing, western_blot, elisa, flow_cytometry, microscopy, other]
         status:
           type: string
-          enum: [planned, running, completed, failed, cancelled]
         sampleIds:
           type: array
           items:
@@ -1582,7 +1948,6 @@ components:
           type: string
         type:
           type: string
-          enum: [pcr, sequencing, western_blot, elisa, flow_cytometry, microscopy, other]
         sampleIds:
           type: array
           items:
@@ -1600,7 +1965,6 @@ components:
           type: string
         status:
           type: string
-          enum: [planned, running, completed, failed, cancelled]
         protocol:
           type: string
         notes:
@@ -1622,13 +1986,11 @@ components:
         samplesByType:
           type: array
           items:
-            type: object
-            properties:
-              type:
-                type: string
-              count:
-                type: integer
-            required: [type, count]
+            $ref: "#/components/schemas/KeyValueCount"
+        samplesByStatus:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeyValueCount"
         experimentsByStatus:
           type: array
           items:
@@ -1639,6 +2001,40 @@ components:
               count:
                 type: integer
             required: [status, count]
+        experimentsByType:
+          type: array
+          items:
+            $ref: "#/components/schemas/KeyValueCount"
+        concentrationHistogram:
+          type: array
+          items:
+            type: object
+            properties:
+              bucket:
+                type: string
+              count:
+                type: integer
+            required: [bucket, count]
+        volumeHistogram:
+          type: array
+          items:
+            type: object
+            properties:
+              bucket:
+                type: string
+              count:
+                type: integer
+            required: [bucket, count]
+        creationTimeline:
+          type: array
+          items:
+            type: object
+            properties:
+              month:
+                type: string
+              count:
+                type: integer
+            required: [month, count]
         recentActivity:
           type: array
           items:
@@ -1687,12 +2083,40 @@ components:
           type: integer
         qedScore:
           type: number
+        ro5Violations:
+          type: integer
+        psa:
+          type: number
         maxPhase:
           type: integer
         indication:
           type: string
         atcClass:
           type: string
+        atcClasses:
+          type: array
+          items:
+            type: string
+        firstApproval:
+          type: integer
+        moleculeType:
+          type: string
+        chemblUrl:
+          type: string
+        pubchemUrl:
+          type: string
+        indications:
+          type: array
+          items:
+            type: object
+            properties:
+              term:
+                type: string
+              maxPhase:
+                type: number
+            required: [term]
+        totalIndications:
+          type: integer
       required: [chemblId, name]
 
     CompoundSearchResponse:
@@ -1727,8 +2151,16 @@ components:
           type: string
         assayType:
           type: string
+        assayDescription:
+          type: string
         pchembl:
           type: number
+        activityComment:
+          type: string
+        documentYear:
+          type: integer
+        targetChemblUrl:
+          type: string
       required: [activityId, targetName, standardType]
 
     CompoundActivitiesResponse:
@@ -1742,6 +2174,16 @@ components:
             $ref: "#/components/schemas/CompoundActivity"
         total:
           type: integer
+        topTargets:
+          type: array
+          items:
+            type: object
+            properties:
+              target:
+                type: string
+              count:
+                type: integer
+            required: [target, count]
       required: [chemblId, activities, total]
 
     DrugTarget:
@@ -1761,6 +2203,10 @@ components:
             type: string
         uniprotId:
           type: string
+        chemblUrl:
+          type: string
+        uniprotUrl:
+          type: string
       required: [targetChemblId, targetName]
 
     TargetSearchResponse:
@@ -1777,11 +2223,13 @@ components:
     DrugDashboardStats:
       type: object
       properties:
-        totalCompoundsSearched:
-          type: integer
         approvedDrugs:
           type: integer
         uniqueTargets:
+          type: integer
+        totalIndications:
+          type: integer
+        phase4Indications:
           type: integer
         recentSearches:
           type: array
@@ -1805,7 +2253,7 @@ components:
               count:
                 type: integer
             required: [indication, count]
-      required: [totalCompoundsSearched, approvedDrugs, uniqueTargets, recentSearches, topIndications]
+      required: [approvedDrugs, uniqueTargets, topIndications]
 
     # ── Transcriptomics Schemas ────────────────────────────────────────────────
     GeneExpressionEntry:
@@ -1817,11 +2265,17 @@ components:
           type: string
         tissue:
           type: string
+        tissueName:
+          type: string
+        ontologyId:
+          type: string
         tpm:
           type: number
         median:
           type: number
         unit:
+          type: string
+        gtexUrl:
           type: string
       required: [geneId, geneName, tissue, tpm]
 
@@ -1829,6 +2283,16 @@ components:
       type: object
       properties:
         gene:
+          type: string
+        geneId:
+          type: string
+        chromosome:
+          type: string
+        start:
+          type: integer
+        end:
+          type: integer
+        description:
           type: string
         expressions:
           type: array
@@ -1840,6 +2304,20 @@ components:
             type: string
         maxTpm:
           type: number
+        medianExpressionHistogram:
+          type: array
+          items:
+            type: object
+            properties:
+              bucket:
+                type: string
+              count:
+                type: integer
+            required: [bucket, count]
+        gtexUrl:
+          type: string
+        ensemblUrl:
+          type: string
       required: [gene, expressions, tissues]
 
     TranscriptomicsJob:
@@ -1851,8 +2329,11 @@ components:
           type: string
         status:
           type: string
-          enum: [pending, aligning, quantifying, analyzing, completed, failed]
         sampleType:
+          type: string
+        referenceGenome:
+          type: string
+        pairedEnd:
           type: string
         readsCount:
           type: integer
@@ -1901,5 +2382,285 @@ components:
                 type: string
               sampleCount:
                 type: integer
+              colorHex:
+                type: string
+              expressedGeneCount:
+                type: integer
+              eGeneCount:
+                type: integer
             required: [id, name]
       required: [tissues]
+
+    Species:
+      type: object
+      properties:
+        name:
+          type: string
+        displayName:
+          type: string
+        commonName:
+          type: string
+      required: [name]
+
+    SpeciesListResponse:
+      type: object
+      properties:
+        species:
+          type: array
+          items:
+            $ref: "#/components/schemas/Species"
+        total:
+          type: integer
+      required: [species, total]
+
+    # ── Search Schemas ────────────────────────────────────────────────────────────
+    SearchResultItem:
+      type: object
+      properties:
+        id:
+          type: string
+        collection:
+          type: string
+        rowId:
+          type: string
+        score:
+          type: number
+        snippet:
+          type: string
+        fields:
+          type: object
+          additionalProperties: true
+        links:
+          type: object
+          additionalProperties:
+            type: string
+      required: [id, collection, rowId, score, fields]
+
+    SearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+        total:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchResultItem"
+      required: [query, total, results]
+
+    SearchSchemaEntry:
+      type: object
+      properties:
+        collection:
+          type: string
+        count:
+          type: integer
+        searchableFields:
+          type: array
+          items:
+            type: string
+        metadataFields:
+          type: array
+          items:
+            type: string
+      required: [collection, count, searchableFields]
+
+    SearchSchemaResponse:
+      type: object
+      properties:
+        collections:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchSchemaEntry"
+      required: [collections]
+
+    SearchFacetsResponse:
+      type: object
+      properties:
+        field:
+          type: string
+        facets:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              count:
+                type: integer
+            required: [key, count]
+        total:
+          type: integer
+      required: [field, facets, total]
+
+    StatsOverview:
+      type: object
+      properties:
+        datasets:
+          type: object
+          additionalProperties:
+            type: integer
+        totalRecords:
+          type: integer
+        moduleStats:
+          type: object
+          additionalProperties: true
+        charts:
+          type: object
+          properties:
+            variantSignificance:
+              type: array
+              items:
+                $ref: "#/components/schemas/KeyValueCount"
+            entityTypeBreakdown:
+              type: array
+              items:
+                $ref: "#/components/schemas/KeyValueCount"
+            experimentStatus:
+              type: array
+              items:
+                $ref: "#/components/schemas/KeyValueCount"
+            sampleTypes:
+              type: array
+              items:
+                $ref: "#/components/schemas/KeyValueCount"
+            variantActivity:
+              type: array
+              items:
+                type: object
+                properties:
+                  date:
+                    type: string
+                  count:
+                    type: integer
+                required: [date, count]
+          required: [variantSignificance, entityTypeBreakdown, experimentStatus, sampleTypes, variantActivity]
+      required: [datasets, totalRecords, moduleStats, charts]
+
+    KeyValueCount:
+      type: object
+      properties:
+        key:
+          type: string
+        count:
+          type: integer
+      required: [key, count]
+
+    RelatedProteinsResponse:
+      type: object
+      properties:
+        pdbId:
+          type: string
+        clusterId:
+          type: string
+        similarityCutoff:
+          type: number
+        related:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProteinEntry"
+      required: [pdbId, related]
+
+    Citation:
+      type: object
+      properties:
+        title:
+          type: string
+        journal:
+          type: string
+        year:
+          type: string
+        pmid:
+          type: string
+        doi:
+          type: string
+        pubmedUrl:
+          type: string
+        doiUrl:
+          type: string
+
+    Conformer3d:
+      type: object
+      properties:
+        chemblId:
+          type: string
+        cid:
+          type: string
+        name:
+          type: string
+        atoms:
+          type: array
+          items:
+            type: object
+            properties:
+              x:
+                type: number
+              y:
+                type: number
+              z:
+                type: number
+              element:
+                type: string
+            required: [x, y, z, element]
+        bonds:
+          type: array
+          items:
+            type: object
+            properties:
+              a:
+                type: integer
+              b:
+                type: integer
+              order:
+                type: integer
+            required: [a, b, order]
+        atomCount:
+          type: integer
+        bondCount:
+          type: integer
+        pubchemUrl:
+          type: string
+        molecularFormula:
+          type: string
+        molecularWeight:
+          type: string
+      required: [chemblId, cid, atoms, bonds]
+
+    SequenceContextResponse:
+      type: object
+      properties:
+        variant:
+          type: object
+          properties:
+            id:
+              type: string
+            chromosome:
+              type: string
+            position:
+              type: integer
+            ref:
+              type: string
+            alt:
+              type: string
+            rsId:
+              type: string
+            gene:
+              type: string
+            consequence:
+              type: string
+            significance:
+              type: string
+        sequence:
+          type: string
+        leftFlank:
+          type: string
+        refAllele:
+          type: string
+        rightFlank:
+          type: string
+        flank:
+          type: integer
+        source:
+          type: string
+      required: [variant, sequence, leftFlank, refAllele, rightFlank, flank]

@@ -8,10 +8,12 @@ import genomeBrowserRouter from "./genome-browser";
 import limsRouter from "./lims";
 import drugsRouter from "./drugs";
 import transcriptomicsRouter from "./transcriptomics";
+import searchRouter from "./search";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(searchRouter);
 router.use(genomicsRouter);
 router.use(proteinRouter);
 router.use(crisprRouter);

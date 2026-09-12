@@ -21,6 +21,7 @@ import type {
   Compound,
   CompoundActivitiesResponse,
   CompoundSearchResponse,
+  Conformer3d,
   CreateExperimentBody,
   CreateSampleBody,
   CreateTranscriptomicsJobBody,
@@ -35,14 +36,17 @@ import type {
   GenomeTracksResponse,
   GenomicRegionData,
   GenomicSearchResponse,
-  GenomicsJob,
   GenomicsJobList,
   GenomicsStats,
+  GenomicsUploadResult,
   GetCompoundActivitiesParams,
   GetGeneSequenceParams,
   GetGenomicRegionParams,
   GetGenomicsStatsParams,
   GetKnowledgeGraphParams,
+  GetSearchFacetsParams,
+  GetVariantSequenceContextParams,
+  GlobalSearchParams,
   HealthStatus,
   KnowledgeGraph,
   LimsStats,
@@ -55,14 +59,21 @@ import type {
   ProteinSearchResponse,
   ProteinStructure,
   PubmedSearchResponse,
+  RelatedProteinsResponse,
   Sample,
   SampleListResponse,
   SearchCompoundsParams,
+  SearchFacetsResponse,
   SearchGeneExpressionParams,
   SearchGenomicRegionParams,
   SearchProteinsParams,
   SearchPubmedPapersParams,
+  SearchResponse,
+  SearchSchemaResponse,
   SearchTargetsParams,
+  SequenceContextResponse,
+  SpeciesListResponse,
+  StatsOverview,
   TargetSearchResponse,
   TissueListResponse,
   TranscriptomicsJob,
@@ -261,8 +272,8 @@ export const getUploadVcfUrl = () => {
 export const uploadVcf = async (
   uploadVcfBody: UploadVcfBody,
   options?: RequestInit,
-): Promise<GenomicsJob> => {
-  return customFetch<GenomicsJob>(getUploadVcfUrl(), {
+): Promise<GenomicsUploadResult> => {
+  return customFetch<GenomicsUploadResult>(getUploadVcfUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -417,6 +428,127 @@ export function useAnnotateVariant<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getAnnotateVariantQueryOptions(variantId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Real reference bases around a variant (Ensembl GRCh38) for 3D helix view
+ */
+export const getGetVariantSequenceContextUrl = (
+  variantId: string,
+  params?: GetVariantSequenceContextParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/genomics/variants/${variantId}/sequence-context?${stringifiedParams}`
+    : `/api/genomics/variants/${variantId}/sequence-context`;
+};
+
+export const getVariantSequenceContext = async (
+  variantId: string,
+  params?: GetVariantSequenceContextParams,
+  options?: RequestInit,
+): Promise<SequenceContextResponse> => {
+  return customFetch<SequenceContextResponse>(
+    getGetVariantSequenceContextUrl(variantId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetVariantSequenceContextQueryKey = (
+  variantId: string,
+  params?: GetVariantSequenceContextParams,
+) => {
+  return [
+    `/api/genomics/variants/${variantId}/sequence-context`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetVariantSequenceContextQueryOptions = <
+  TData = Awaited<ReturnType<typeof getVariantSequenceContext>>,
+  TError = ErrorType<unknown>,
+>(
+  variantId: string,
+  params?: GetVariantSequenceContextParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getVariantSequenceContext>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetVariantSequenceContextQueryKey(variantId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getVariantSequenceContext>>
+  > = ({ signal }) =>
+    getVariantSequenceContext(variantId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!variantId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getVariantSequenceContext>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetVariantSequenceContextQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getVariantSequenceContext>>
+>;
+export type GetVariantSequenceContextQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Real reference bases around a variant (Ensembl GRCh38) for 3D helix view
+ */
+
+export function useGetVariantSequenceContext<
+  TData = Awaited<ReturnType<typeof getVariantSequenceContext>>,
+  TError = ErrorType<unknown>,
+>(
+  variantId: string,
+  params?: GetVariantSequenceContextParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getVariantSequenceContext>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetVariantSequenceContextQueryOptions(
+    variantId,
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -3445,6 +3577,671 @@ export function useListTissues<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListTissuesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary BM25 natural-language search across all datasets with field:value filters
+ */
+export const getGlobalSearchUrl = (params: GlobalSearchParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/search?${stringifiedParams}`
+    : `/api/search`;
+};
+
+export const globalSearch = async (
+  params: GlobalSearchParams,
+  options?: RequestInit,
+): Promise<SearchResponse> => {
+  return customFetch<SearchResponse>(getGlobalSearchUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGlobalSearchQueryKey = (params?: GlobalSearchParams) => {
+  return [`/api/search`, ...(params ? [params] : [])] as const;
+};
+
+export const getGlobalSearchQueryOptions = <
+  TData = Awaited<ReturnType<typeof globalSearch>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GlobalSearchParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof globalSearch>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGlobalSearchQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof globalSearch>>> = ({
+    signal,
+  }) => globalSearch(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof globalSearch>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GlobalSearchQueryResult = NonNullable<
+  Awaited<ReturnType<typeof globalSearch>>
+>;
+export type GlobalSearchQueryError = ErrorType<unknown>;
+
+/**
+ * @summary BM25 natural-language search across all datasets with field:value filters
+ */
+
+export function useGlobalSearch<
+  TData = Awaited<ReturnType<typeof globalSearch>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GlobalSearchParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof globalSearch>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGlobalSearchQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List collections, counts, and searchable fields
+ */
+export const getGetSearchSchemaUrl = () => {
+  return `/api/search/schema`;
+};
+
+export const getSearchSchema = async (
+  options?: RequestInit,
+): Promise<SearchSchemaResponse> => {
+  return customFetch<SearchSchemaResponse>(getGetSearchSchemaUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSearchSchemaQueryKey = () => {
+  return [`/api/search/schema`] as const;
+};
+
+export const getGetSearchSchemaQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSearchSchema>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSearchSchema>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSearchSchemaQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSearchSchema>>> = ({
+    signal,
+  }) => getSearchSchema({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSearchSchema>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSearchSchemaQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSearchSchema>>
+>;
+export type GetSearchSchemaQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List collections, counts, and searchable fields
+ */
+
+export function useGetSearchSchema<
+  TData = Awaited<ReturnType<typeof getSearchSchema>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSearchSchema>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSearchSchemaQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Facet counts for a field, optionally scoped by collection or query
+ */
+export const getGetSearchFacetsUrl = (params: GetSearchFacetsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/search/facets?${stringifiedParams}`
+    : `/api/search/facets`;
+};
+
+export const getSearchFacets = async (
+  params: GetSearchFacetsParams,
+  options?: RequestInit,
+): Promise<SearchFacetsResponse> => {
+  return customFetch<SearchFacetsResponse>(getGetSearchFacetsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSearchFacetsQueryKey = (params?: GetSearchFacetsParams) => {
+  return [`/api/search/facets`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetSearchFacetsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSearchFacets>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetSearchFacetsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSearchFacets>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSearchFacetsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSearchFacets>>> = ({
+    signal,
+  }) => getSearchFacets(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSearchFacets>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSearchFacetsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSearchFacets>>
+>;
+export type GetSearchFacetsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Facet counts for a field, optionally scoped by collection or query
+ */
+
+export function useGetSearchFacets<
+  TData = Awaited<ReturnType<typeof getSearchFacets>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetSearchFacetsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSearchFacets>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSearchFacetsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Cross-dataset overview with chart data for the dashboard
+ */
+export const getGetStatsOverviewUrl = () => {
+  return `/api/stats/overview`;
+};
+
+export const getStatsOverview = async (
+  options?: RequestInit,
+): Promise<StatsOverview> => {
+  return customFetch<StatsOverview>(getGetStatsOverviewUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStatsOverviewQueryKey = () => {
+  return [`/api/stats/overview`] as const;
+};
+
+export const getGetStatsOverviewQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStatsOverview>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getStatsOverview>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetStatsOverviewQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getStatsOverview>>
+  > = ({ signal }) => getStatsOverview({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStatsOverview>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStatsOverviewQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStatsOverview>>
+>;
+export type GetStatsOverviewQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Cross-dataset overview with chart data for the dashboard
+ */
+
+export function useGetStatsOverview<
+  TData = Awaited<ReturnType<typeof getStatsOverview>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getStatsOverview>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStatsOverviewQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List all Ensembl species available for CRISPR design
+ */
+export const getListCrisprSpeciesUrl = () => {
+  return `/api/crispr/species`;
+};
+
+export const listCrisprSpecies = async (
+  options?: RequestInit,
+): Promise<SpeciesListResponse> => {
+  return customFetch<SpeciesListResponse>(getListCrisprSpeciesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListCrisprSpeciesQueryKey = () => {
+  return [`/api/crispr/species`] as const;
+};
+
+export const getListCrisprSpeciesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCrisprSpecies>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCrisprSpecies>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListCrisprSpeciesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCrisprSpecies>>
+  > = ({ signal }) => listCrisprSpecies({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCrisprSpecies>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCrisprSpeciesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCrisprSpecies>>
+>;
+export type ListCrisprSpeciesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all Ensembl species available for CRISPR design
+ */
+
+export function useListCrisprSpecies<
+  TData = Awaited<ReturnType<typeof listCrisprSpecies>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCrisprSpecies>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCrisprSpeciesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List all Ensembl species available in the genome browser
+ */
+export const getListGenomeSpeciesUrl = () => {
+  return `/api/genome/species`;
+};
+
+export const listGenomeSpecies = async (
+  options?: RequestInit,
+): Promise<SpeciesListResponse> => {
+  return customFetch<SpeciesListResponse>(getListGenomeSpeciesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListGenomeSpeciesQueryKey = () => {
+  return [`/api/genome/species`] as const;
+};
+
+export const getListGenomeSpeciesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listGenomeSpecies>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listGenomeSpecies>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListGenomeSpeciesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listGenomeSpecies>>
+  > = ({ signal }) => listGenomeSpecies({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listGenomeSpecies>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListGenomeSpeciesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listGenomeSpecies>>
+>;
+export type ListGenomeSpeciesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all Ensembl species available in the genome browser
+ */
+
+export function useListGenomeSpecies<
+  TData = Awaited<ReturnType<typeof listGenomeSpecies>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listGenomeSpecies>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListGenomeSpeciesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Structures in the same RCSB sequence-identity cluster
+ */
+export const getGetRelatedProteinsUrl = (pdbId: string) => {
+  return `/api/protein/${pdbId}/related`;
+};
+
+export const getRelatedProteins = async (
+  pdbId: string,
+  options?: RequestInit,
+): Promise<RelatedProteinsResponse> => {
+  return customFetch<RelatedProteinsResponse>(getGetRelatedProteinsUrl(pdbId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetRelatedProteinsQueryKey = (pdbId: string) => {
+  return [`/api/protein/${pdbId}/related`] as const;
+};
+
+export const getGetRelatedProteinsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getRelatedProteins>>,
+  TError = ErrorType<unknown>,
+>(
+  pdbId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getRelatedProteins>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetRelatedProteinsQueryKey(pdbId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getRelatedProteins>>
+  > = ({ signal }) => getRelatedProteins(pdbId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!pdbId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getRelatedProteins>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetRelatedProteinsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getRelatedProteins>>
+>;
+export type GetRelatedProteinsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Structures in the same RCSB sequence-identity cluster
+ */
+
+export function useGetRelatedProteins<
+  TData = Awaited<ReturnType<typeof getRelatedProteins>>,
+  TError = ErrorType<unknown>,
+>(
+  pdbId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getRelatedProteins>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetRelatedProteinsQueryOptions(pdbId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Real 3D conformer (PubChem computed geometry) parsed to atoms + bonds
+ */
+export const getGetCompoundConformer3dUrl = (chemblId: string) => {
+  return `/api/drugs/${chemblId}/conformer3d`;
+};
+
+export const getCompoundConformer3d = async (
+  chemblId: string,
+  options?: RequestInit,
+): Promise<Conformer3d> => {
+  return customFetch<Conformer3d>(getGetCompoundConformer3dUrl(chemblId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCompoundConformer3dQueryKey = (chemblId: string) => {
+  return [`/api/drugs/${chemblId}/conformer3d`] as const;
+};
+
+export const getGetCompoundConformer3dQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCompoundConformer3d>>,
+  TError = ErrorType<void>,
+>(
+  chemblId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCompoundConformer3d>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetCompoundConformer3dQueryKey(chemblId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCompoundConformer3d>>
+  > = ({ signal }) =>
+    getCompoundConformer3d(chemblId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!chemblId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCompoundConformer3d>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCompoundConformer3dQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCompoundConformer3d>>
+>;
+export type GetCompoundConformer3dQueryError = ErrorType<void>;
+
+/**
+ * @summary Real 3D conformer (PubChem computed geometry) parsed to atoms + bonds
+ */
+
+export function useGetCompoundConformer3d<
+  TData = Awaited<ReturnType<typeof getCompoundConformer3d>>,
+  TError = ErrorType<void>,
+>(
+  chemblId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getCompoundConformer3d>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCompoundConformer3dQueryOptions(chemblId, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

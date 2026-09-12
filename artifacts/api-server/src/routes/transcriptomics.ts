@@ -1,136 +1,188 @@
 import { Router } from "express";
 import { randomUUID } from "crypto";
 import store from "../data";
+import { fetchJson, fetchJsonOrNull } from "../lib/external";
+import { reindex } from "../lib/search-index";
 
 const router = Router();
 
-const GTEX_TISSUES = [
-  { id: "Adipose_Subcutaneous", name: "Adipose - Subcutaneous", sampleCount: 581 },
-  { id: "Adipose_Visceral_Omentum", name: "Adipose - Visceral (Omentum)", sampleCount: 469 },
-  { id: "Adrenal_Gland", name: "Adrenal Gland", sampleCount: 233 },
-  { id: "Artery_Aorta", name: "Artery - Aorta", sampleCount: 387 },
-  { id: "Artery_Coronary", name: "Artery - Coronary", sampleCount: 213 },
-  { id: "Artery_Tibial", name: "Artery - Tibial", sampleCount: 584 },
-  { id: "Brain_Amygdala", name: "Brain - Amygdala", sampleCount: 129 },
-  { id: "Brain_Caudate_basal_ganglia", name: "Brain - Caudate (basal ganglia)", sampleCount: 194 },
-  { id: "Brain_Cerebellum", name: "Brain - Cerebellum", sampleCount: 209 },
-  { id: "Brain_Cortex", name: "Brain - Cortex", sampleCount: 205 },
-  { id: "Brain_Frontal_Cortex_BA9", name: "Brain - Frontal Cortex (BA9)", sampleCount: 175 },
-  { id: "Brain_Hippocampus", name: "Brain - Hippocampus", sampleCount: 165 },
-  { id: "Brain_Hypothalamus", name: "Brain - Hypothalamus", sampleCount: 170 },
-  { id: "Breast_Mammary_Tissue", name: "Breast - Mammary Tissue", sampleCount: 396 },
-  { id: "Cells_Cultured_fibroblasts", name: "Cells - Cultured fibroblasts", sampleCount: 483 },
-  { id: "Colon_Sigmoid", name: "Colon - Sigmoid", sampleCount: 318 },
-  { id: "Colon_Transverse", name: "Colon - Transverse", sampleCount: 368 },
-  { id: "Esophagus_Mucosa", name: "Esophagus - Mucosa", sampleCount: 497 },
-  { id: "Heart_Left_Ventricle", name: "Heart - Left Ventricle", sampleCount: 386 },
-  { id: "Kidney_Cortex", name: "Kidney - Cortex", sampleCount: 73 },
-  { id: "Liver", name: "Liver", sampleCount: 208 },
-  { id: "Lung", name: "Lung", sampleCount: 578 },
-  { id: "Muscle_Skeletal", name: "Muscle - Skeletal", sampleCount: 706 },
-  { id: "Nerve_Tibial", name: "Nerve - Tibial", sampleCount: 532 },
-  { id: "Ovary", name: "Ovary", sampleCount: 167 },
-  { id: "Pancreas", name: "Pancreas", sampleCount: 305 },
-  { id: "Prostate", name: "Prostate", sampleCount: 221 },
-  { id: "Skin_Not_Sun_Exposed_Suprapubic", name: "Skin - Not Sun Exposed (Suprapubic)", sampleCount: 517 },
-  { id: "Skin_Sun_Exposed_Lower_leg", name: "Skin - Sun Exposed (Lower leg)", sampleCount: 605 },
-  { id: "Small_Intestine_Terminal_Ileum", name: "Small Intestine - Terminal Ileum", sampleCount: 174 },
-  { id: "Spleen", name: "Spleen", sampleCount: 227 },
-  { id: "Stomach", name: "Stomach", sampleCount: 324 },
-  { id: "Testis", name: "Testis", sampleCount: 259 },
-  { id: "Thyroid", name: "Thyroid", sampleCount: 574 },
-  { id: "Uterus", name: "Uterus", sampleCount: 129 },
-  { id: "Vagina", name: "Vagina", sampleCount: 141 },
-  { id: "Whole_Blood", name: "Whole Blood", sampleCount: 755 },
-];
+const GTEX_BASE = "https://gtexportal.org/api/v2";
 
-router.get("/transcriptomics/tissues", (_req, res) => {
-  res.json({ tissues: GTEX_TISSUES });
+interface GtexGene {
+  gencodeId: string;
+  geneSymbol: string;
+  chromosome: string;
+  start: number;
+  end: number;
+  description?: string;
+}
+interface GtexMedian {
+  median: number;
+  tissueSiteDetailId: string;
+  ontologyId: string;
+  gencodeId: string;
+  geneSymbol: string;
+  unit: string;
+}
+interface GtexTissue {
+  tissueSiteDetailId: string;
+  colorHex?: string;
+  eGeneCount?: number;
+  expressedGeneCount?: number;
+  eqtlSampleSummary?: { totalCount?: number };
+  rnaSeqSampleSummary?: { totalCount?: number };
+}
+
+/**
+ * Resolve a gene symbol or Ensembl ID to GTEx's versioned gencodeId
+ * (e.g. BRCA1 -> ENSG00000012048.20). GTEx v2 API requires the version.
+ */
+async function resolveGencode(gene: string): Promise<GtexGene | null> {
+  const q = gene.trim();
+  const direct = await fetchJsonOrNull<{ data?: GtexGene[] }>(
+    `${GTEX_BASE}/reference/geneSearch?geneId=${encodeURIComponent(q)}&datasetId=gtex_v8&format=json`,
+    { timeoutMs: 15000 },
+  );
+  let hit = direct?.data?.[0];
+  if (!hit) {
+    const search = await fetchJsonOrNull<{ data?: Array<{ gencodeId: string; geneSymbol: string; chromosome: string; start: number; end: number }> }>(
+      `${GTEX_BASE}/dataset/link?geneSymbol=${encodeURIComponent(q)}&datasetId=gtex_v8&format=json`,
+      { timeoutMs: 15000 },
+    );
+    hit = search?.data?.[0];
+  }
+  return hit ?? null;
+}
+
+/** Live tissue list from GTEx with sample counts, colors, gene counts. */
+router.get("/transcriptomics/tissues", async (_req, res, next) => {
+  try {
+    const data = await fetchJson<{ data?: GtexTissue[] }>(
+      `${GTEX_BASE}/dataset/tissueSiteDetail?datasetId=gtex_v8&pageSize=250&format=json`,
+      { timeoutMs: 20000, retries: 1 },
+    );
+    const tissues = (data.data ?? []).map((t) => ({
+      id: t.tissueSiteDetailId,
+      name: t.tissueSiteDetailId.replace(/_/g, " "),
+      sampleCount: t.rnaSeqSampleSummary?.totalCount ?? t.eqtlSampleSummary?.totalCount ?? 0,
+      colorHex: t.colorHex ? `#${t.colorHex}` : null,
+      expressedGeneCount: t.expressedGeneCount ?? null,
+      eGeneCount: t.eGeneCount ?? null,
+    }));
+    res.json({ tissues, total: tissues.length });
+  } catch (err) {
+    next(err);
+  }
 });
 
-router.get("/transcriptomics/expression/search", async (req, res) => {
+router.get("/transcriptomics/expression/search", async (req, res, next) => {
   const { gene, tissue } = req.query as Record<string, string>;
-  if (!gene) { res.status(400).json({ error: "gene is required" }); return; }
-
+  if (!gene) {
+    res.status(400).json({ error: "gene is required" });
+    return;
+  }
   try {
-    const url = `https://gtexportal.org/api/v2/expression/medianGeneExpression?geneId=${encodeURIComponent(gene)}&datasetId=gtex_v8&format=json`;
-    const gtexRes = await fetch(url, { signal: AbortSignal.timeout(12000) });
-
-    if (!gtexRes.ok) {
-      const ensemblUrl = `https://rest.ensembl.org/xrefs/symbol/homo_sapiens/${encodeURIComponent(gene)}?content-type=application/json`;
-      const ensRes = await fetch(ensemblUrl, { signal: AbortSignal.timeout(8000) });
-      if (!ensRes.ok) { res.json({ gene, expressions: [], tissues: [] }); return; }
-      const refs = await ensRes.json() as Array<{ id: string; type: string }>;
-      const geneRef = refs.find((r) => r.type === "gene");
-      if (!geneRef) { res.json({ gene, expressions: [], tissues: [] }); return; }
-
-      const ensemblId = geneRef.id;
-      const gtexUrl2 = `https://gtexportal.org/api/v2/expression/medianGeneExpression?geneId=${ensemblId}&datasetId=gtex_v8&format=json`;
-      const gtexRes2 = await fetch(gtexUrl2, { signal: AbortSignal.timeout(12000) });
-      if (!gtexRes2.ok) { res.json({ gene, expressions: [], tissues: [], maxTpm: 0 }); return; }
-
-      const gtexData = await gtexRes2.json() as {
-        data: Array<{ tissueSiteDetailId: string; geneSymbol: string; gencodeId: string; median: number; unit: string }>;
-      };
-      processGtexData(gtexData, gene, tissue, res);
+    const gencode = await resolveGencode(gene);
+    if (!gencode) {
+      res.status(404).json({ error: `Gene ${gene} not found in GTEx` });
       return;
     }
 
-    const gtexData = await gtexRes.json() as {
-      data: Array<{ tissueSiteDetailId: string; geneSymbol: string; gencodeId: string; median: number; unit: string }>;
-    };
-    processGtexData(gtexData, gene, tissue, res);
-  } catch {
-    res.status(502).json({ error: "Failed to reach GTEx" });
+    const data = await fetchJson<{ data?: GtexMedian[] }>(
+      `${GTEX_BASE}/expression/medianGeneExpression?gencodeId=${encodeURIComponent(gencode.gencodeId)}&datasetId=gtex_v8&format=json`,
+      { timeoutMs: 20000, retries: 1 },
+    );
+
+    let expressions = (data.data ?? []).map((d) => ({
+      geneId: d.gencodeId,
+      geneName: d.geneSymbol ?? gencode.geneSymbol,
+      tissue: d.tissueSiteDetailId,
+      tissueName: d.tissueSiteDetailId.replace(/_/g, " "),
+      ontologyId: d.ontologyId,
+      tpm: Math.round((d.median ?? 0) * 1000) / 1000,
+      median: Math.round((d.median ?? 0) * 1000) / 1000,
+      unit: d.unit ?? "TPM",
+      gtexUrl: `https://gtexportal.org/home/gene/${gencode.gencodeId}`,
+    }));
+
+    if (tissue) {
+      const t = tissue.toLowerCase();
+      expressions = expressions.filter((e) => e.tissue.toLowerCase().includes(t) || e.tissueName.toLowerCase().includes(t));
+    }
+
+    expressions.sort((a, b) => b.tpm - a.tpm);
+    const tissues = [...new Set(expressions.map((e) => e.tissue))];
+    const maxTpm = expressions.reduce((m, e) => Math.max(m, e.tpm), 0);
+
+    // Bucket distribution for the expression histogram.
+    const buckets = [0, 0, 0, 0, 0, 0]; // 0, <0.1, <1, <10, <100, >=100 TPM
+    for (const e of expressions) {
+      const b = e.tpm <= 0 ? 0 : e.tpm < 0.1 ? 1 : e.tpm < 1 ? 2 : e.tpm < 10 ? 3 : e.tpm < 100 ? 4 : 5;
+      buckets[b]++;
+    }
+
+    res.json({
+      gene: gencode.geneSymbol,
+      geneId: gencode.gencodeId,
+      chromosome: gencode.chromosome,
+      start: gencode.start,
+      end: gencode.end,
+      description: gencode.description,
+      expressions,
+      tissues,
+      maxTpm,
+      medianExpressionHistogram: [
+        { bucket: "0", count: buckets[0] },
+        { bucket: "<0.1", count: buckets[1] },
+        { bucket: "0.1–1", count: buckets[2] },
+        { bucket: "1–10", count: buckets[3] },
+        { bucket: "10–100", count: buckets[4] },
+        { bucket: "100+", count: buckets[5] },
+      ],
+      gtexUrl: `https://gtexportal.org/home/gene/${gencode.gencodeId}`,
+      ensemblUrl: `https://www.ensembl.org/Homo_sapiens/Gene/Summary?g=${gencode.gencodeId.split(".")[0]}`,
+    });
+  } catch (err) {
+    next(err);
   }
 });
 
-function processGtexData(
-  gtexData: { data: Array<{ tissueSiteDetailId: string; geneSymbol: string; gencodeId: string; median: number; unit: string }> },
-  gene: string,
-  tissue: string | undefined,
-  res: import("express").Response
-) {
-  let expressions = (gtexData.data ?? []).map((d) => ({
-    geneId: d.gencodeId ?? gene,
-    geneName: d.geneSymbol ?? gene,
-    tissue: d.tissueSiteDetailId ?? "",
-    tpm: d.median ?? 0,
-    median: d.median ?? 0,
-    unit: d.unit ?? "TPM",
-  }));
-
-  if (tissue) {
-    expressions = expressions.filter((e) => e.tissue.toLowerCase().includes(tissue.toLowerCase()));
-  }
-
-  const tissues = [...new Set(expressions.map((e) => e.tissue))];
-  const maxTpm = expressions.reduce((m, e) => Math.max(m, e.tpm), 0);
-  res.json({ gene, expressions, tissues, maxTpm });
-}
-
-router.get("/transcriptomics/jobs", async (_req, res) => {
-  const jobs = store.transcriptomicsJobs.all()
+router.get("/transcriptomics/jobs", (_req, res) => {
+  const jobs = [...store.transcriptomicsJobs.all()]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 50);
   res.json({ jobs });
 });
 
-router.post("/transcriptomics/jobs", async (req, res) => {
+router.post("/transcriptomics/jobs", (req, res) => {
   const { name, sampleType, pairedEnd = false, referenceGenome = "GRCh38" } = req.body as {
-    name: string; sampleType: string; pairedEnd?: boolean; referenceGenome?: string;
+    name?: string;
+    sampleType?: string;
+    pairedEnd?: boolean;
+    referenceGenome?: string;
   };
   if (!name || !sampleType) {
     res.status(400).json({ error: "name and sampleType are required" });
     return;
   }
   const job = {
-    id: randomUUID(), name, sampleType, status: "pending",
-    referenceGenome, pairedEnd: String(pairedEnd),
+    id: randomUUID(),
+    name,
+    sampleType,
+    status: "pending",
+    referenceGenome,
+    pairedEnd: String(pairedEnd),
     createdAt: new Date(),
+    readsCount: 0,
+    genesDetected: 0,
   };
   store.transcriptomicsJobs.insert(job as never);
-  res.status(201).json(job);
+  reindex();
+  res.status(201).json({
+    ...job,
+    createdAt: job.createdAt.toISOString(),
+    completedAt: null,
+  });
 });
 
 export default router;

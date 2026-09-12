@@ -58,7 +58,7 @@ class Collection<T extends Row> {
   countBy(field: string): Array<{ key: string; count: number }> {
     const map: Record<string, number> = {};
     for (const id of this.order) {
-      const v = (this.rows[id] as Record<string, unknown>)[field];
+      const v = (this.rows[id] as unknown as Record<string, unknown>)[field];
       const key = v == null ? "unknown" : String(v);
       map[key] = (map[key] ?? 0) + 1;
     }
@@ -67,44 +67,21 @@ class Collection<T extends Row> {
 }
 
 function buildCollections() {
-  const genomicsJobs = seed.genomicsJobs.map((j, i) => ({
-    ...j,
-    id: uid(`gj${i}`),
-    createdAt: j.completedAt ?? new Date(),
-  }));
+  const genomicsJobs = seed.genomicsJobs;
   const variantRows = seed.variants.map((v, i) => ({
     ...v,
-    id: uid(`v${i}`),
     jobId: genomicsJobs[i % 2].id,
-    createdAt: v.createdAt ?? new Date(),
   }));
-  const crisprJobs = seed.crisprJobs.map((j, i) => ({
-    ...j,
-    id: uid(`cj${i}`),
-    createdAt: new Date(Date.now() - i * 36e5 - 864e5),
-  }));
+  const crisprJobs = seed.crisprJobs;
   const guideRows = seed.guideRnas.map((g, i) => ({
     ...g,
-    id: uid(`gr${i}`),
     jobId: crisprJobs[i % 2].id,
-    createdAt: g.createdAt ?? new Date(),
   }));
-  const samples = seed.samples.map((s, i) => ({
-    ...s,
-    id: uid(`s${i}`),
-  }));
-  const experiments = seed.experiments.map((e, i) => ({
-    ...e,
-    id: uid(`e${i}`),
-  }));
-  const entities = seed.nlpEntities.map((e, i) => ({ ...e, id: uid(`ne${i}`) }));
-  const relations = seed.nlpRelations.map((r, i) => ({ ...r, id: uid(`nr${i}`) }));
-  const tjobs = seed.transcriptomicsJobs.map((j, i) => ({
-    ...j,
-    id: uid(`tj${i}`),
-    createdAt: new Date(Date.now() - i * 36e5 - 2 * 864e5),
-    completedAt: j.status === "succeeded" ? new Date(Date.now() - i * 36e5) : null,
-  }));
+  const samples = seed.samples;
+  const experiments = seed.experiments;
+  const entities = seed.nlpEntities;
+  const relations = seed.nlpRelations;
+  const tjobs = seed.transcriptomicsJobs;
 
   return {
     genomicsJobs: new Collection(genomicsJobs),
@@ -123,3 +100,4 @@ const store = buildCollections();
 
 export type DataStore = typeof store;
 export default store;
+export { uid };

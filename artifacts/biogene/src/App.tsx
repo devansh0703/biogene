@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 
 import Dashboard from "@/pages/dashboard";
+import GlobalSearch from "@/pages/search";
 import Genomics from "@/pages/genomics";
 import Protein from "@/pages/protein";
 import Crispr from "@/pages/crispr";
@@ -29,6 +30,7 @@ function Router() {
     <AppLayout>
       <Switch>
         <Route path="/" component={Dashboard} />
+        <Route path="/search" component={GlobalSearch} />
         <Route path="/genomics" component={Genomics} />
         <Route path="/protein" component={Protein} />
         <Route path="/crispr" component={Crispr} />

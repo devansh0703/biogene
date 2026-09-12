@@ -1,13 +1,17 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   useListSamples, useCreateSample, useUpdateSample, useDeleteSample,
-  useListExperiments, useCreateExperiment, useUpdateExperiment, useGetLimsStats,
+  useListExperiments, useCreateExperiment, useUpdateExperiment,
+  getGetLimsStatsQueryOptions,
 } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { ChartCard, CountBarChart, CountPieChart, HistogramChart, TimelineChart, type Count } from "@/components/charts";
+import { useQueryParams } from "@/lib/api-url";
 
 const SAMPLE_TYPES = ["DNA", "RNA", "Protein", "Cell Line", "Tissue", "Blood", "Plasma", "Serum", "Other"];
 const EXP_TYPES = ["PCR", "qPCR", "RNA-Seq", "ChIP-Seq", "Western Blot", "ELISA", "Flow Cytometry", "CRISPR", "NGS", "Other"];
@@ -22,10 +26,35 @@ const STATUS_COLORS: Record<string, string> = {
   failed: "bg-white/10 text-white",
 };
 
+interface SampleRow {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  concentration?: number | null;
+  unit?: string | null;
+  volume?: number | null;
+  organism?: string | null;
+  tissue?: string | null;
+  barcode?: string | null;
+  createdAt: string;
+}
+interface ExperimentRow {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  protocol?: string | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
 export default function Lims() {
+  const urlParams = useQueryParams();
   const [activeTab, setActiveTab] = useState<"samples" | "experiments">("samples");
-  const [sampleType, setSampleType] = useState("");
-  const [sampleStatus, setSampleStatus] = useState("");
+  const [q, setQ] = useState("");
+  const [sampleType, setSampleType] = useState(urlParams["type"] ?? "");
+  const [sampleStatus, setSampleStatus] = useState(urlParams["status"] ?? "");
   const [expStatus, setExpStatus] = useState("");
   const [showSampleForm, setShowSampleForm] = useState(false);
   const [showExpForm, setShowExpForm] = useState(false);
@@ -33,18 +62,24 @@ export default function Lims() {
   const [expForm, setExpForm] = useState({ name: "", type: "PCR", protocol: "", notes: "" });
 
   const { data: samplesData, isLoading: samplesLoading, refetch: refetchSamples } = useListSamples({
-    type: sampleType || undefined, status: sampleStatus || undefined, limit: 50,
+    q: q || undefined,
+    type: sampleType || undefined,
+    status: sampleStatus || undefined,
+    limit: 100,
   });
   const { data: expsData, isLoading: expsLoading, refetch: refetchExps } = useListExperiments({
-    status: expStatus || undefined, limit: 50,
+    status: expStatus || undefined, limit: 100,
   });
-  const { data: stats, isLoading: statsLoading } = useGetLimsStats();
+  const { data: stats, isLoading: statsLoading } = useQuery(getGetLimsStatsQueryOptions());
 
   const createSampleMutation = useCreateSample();
   const updateSampleMutation = useUpdateSample();
   const deleteSampleMutation = useDeleteSample();
   const createExpMutation = useCreateExperiment();
   const updateExpMutation = useUpdateExperiment();
+
+  const samples = (samplesData?.samples ?? []) as unknown as SampleRow[];
+  const experiments = (expsData?.experiments ?? []) as unknown as ExperimentRow[];
 
   const handleCreateSample = () => {
     createSampleMutation.mutate({
@@ -66,6 +101,10 @@ export default function Lims() {
     });
   };
 
+  const handleUpdateSampleStatus = (id: string, status: string) => {
+    updateSampleMutation.mutate({ sampleId: id, data: { status } }, { onSuccess: () => refetchSamples() });
+  };
+
   const handleCreateExp = () => {
     createExpMutation.mutate({
       data: { name: expForm.name, type: expForm.type, protocol: expForm.protocol || undefined, notes: expForm.notes || undefined },
@@ -85,6 +124,82 @@ export default function Lims() {
   const handleUpdateExpStatus = (id: string, status: string) => {
     updateExpMutation.mutate({ experimentId: id, data: { status } }, { onSuccess: () => refetchExps() });
   };
+
+  // Client-side charts derived from rows (fast, reflects current filters)
+  const concHistogram = useMemo(() => {
+    const buckets = [
+      { bucket: "0-10", min: 0, max: 10, count: 0 },
+      { bucket: "10-25", min: 10, max: 25, count: 0 },
+      { bucket: "25-50", min: 25, max: 50, count: 0 },
+      { bucket: "50-100", min: 50, max: 100, count: 0 },
+      { bucket: "100-200", min: 100, max: 200, count: 0 },
+      { bucket: "200+", min: 200, max: Infinity, count: 0 },
+    ];
+    for (const s of samples) {
+      if (s.concentration == null) continue;
+      const b = buckets.find((b) => s.concentration! >= b.min && s.concentration! < b.max);
+      if (b) b.count++;
+    }
+    return buckets.filter((b) => b.count > 0 || samples.some((s) => s.concentration != null));
+  }, [samples]);
+
+  const volumeHistogram = useMemo(() => {
+    const buckets = [
+      { bucket: "0-50", min: 0, max: 50, count: 0 },
+      { bucket: "50-100", min: 50, max: 100, count: 0 },
+      { bucket: "100-250", min: 100, max: 250, count: 0 },
+      { bucket: "250-500", min: 250, max: 500, count: 0 },
+      { bucket: "500+", min: 500, max: Infinity, count: 0 },
+    ];
+    for (const s of samples) {
+      if (s.volume == null) continue;
+      const b = buckets.find((b) => s.volume! >= b.min && s.volume! < b.max);
+      if (b) b.count++;
+    }
+    return buckets;
+  }, [samples]);
+
+  const organismChart: Count[] = useMemo(() => {
+    const byOrg = new Map<string, number>();
+    for (const s of samples) {
+      const k = s.organism ?? "unspecified";
+      byOrg.set(k, (byOrg.get(k) ?? 0) + 1);
+    }
+    return [...byOrg.entries()].map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count).slice(0, 8);
+  }, [samples]);
+
+  const expTypeChart: Count[] = useMemo(() => {
+    const byType = new Map<string, number>();
+    for (const e of experiments) {
+      byType.set(e.type, (byType.get(e.type) ?? 0) + 1);
+    }
+    return [...byType.entries()].map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count);
+  }, [experiments]);
+
+  const expStatusChart: Count[] = useMemo(() => {
+    const byStatus = new Map<string, number>();
+    for (const e of experiments) {
+      byStatus.set(e.status, (byStatus.get(e.status) ?? 0) + 1);
+    }
+    return [...byStatus.entries()].map(([key, count]) => ({ key, count }));
+  }, [experiments]);
+
+  const sampleStatusChart: Count[] = useMemo(() => {
+    const byStatus = new Map<string, number>();
+    for (const s of samples) {
+      byStatus.set(s.status, (byStatus.get(s.status) ?? 0) + 1);
+    }
+    return [...byStatus.entries()].map(([key, count]) => ({ key, count }));
+  }, [samples]);
+
+  const expsTimeline = useMemo(() => {
+    const byMonth = new Map<string, number>();
+    for (const e of experiments) {
+      const month = String(e.createdAt).slice(0, 7);
+      byMonth.set(month, (byMonth.get(month) ?? 0) + 1);
+    }
+    return [...byMonth.entries()].sort().map(([date, count]) => ({ date, count }));
+  }, [experiments]);
 
   return (
     <div className="space-y-6">
@@ -113,6 +228,43 @@ export default function Lims() {
         )}
       </div>
 
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <ChartCard title="Samples by Status" subtitle="click to filter">
+          <CountPieChart
+            data={sampleStatusChart}
+            selected={sampleStatus || undefined}
+            onSelect={(k) => setSampleStatus(sampleStatus === k ? "" : k)}
+          />
+        </ChartCard>
+        <ChartCard title="Experiments by Type" subtitle="click to filter tab view">
+          <CountBarChart data={expTypeChart} layout="horizontal" />
+        </ChartCard>
+        <ChartCard title="Experiments by Status" subtitle="click to filter">
+          <CountPieChart
+            data={expStatusChart}
+            selected={expStatus || undefined}
+            onSelect={(k) => { setExpStatus(expStatus === k ? "" : k); setActiveTab("experiments"); }}
+          />
+        </ChartCard>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <ChartCard title="Concentration Histogram" subtitle="samples with measured conc.">
+          <HistogramChart data={concHistogram} />
+        </ChartCard>
+        <ChartCard title="Volume Histogram" subtitle="uL">
+          <HistogramChart data={volumeHistogram} />
+        </ChartCard>
+        <ChartCard title="Organisms" subtitle="sample counts">
+          <CountBarChart data={organismChart} layout="horizontal" maxBars={6} />
+        </ChartCard>
+      </div>
+      {expsTimeline.length > 1 && (
+        <ChartCard title="Experiments Over Time" subtitle="per month">
+          <TimelineChart data={expsTimeline} xKey="date" />
+        </ChartCard>
+      )}
+
       <div className="flex border-b border-border">
         {(["samples", "experiments"] as const).map((tab) => (
           <button
@@ -129,6 +281,12 @@ export default function Lims() {
       {activeTab === "samples" && (
         <div className="space-y-4">
           <div className="flex items-center gap-3 flex-wrap">
+            <Input
+              placeholder="Search name / barcode / organism..."
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="rounded-none font-mono text-xs bg-black border-border w-56"
+            />
             <select
               value={sampleType}
               onChange={(e) => setSampleType(e.target.value)}
@@ -184,25 +342,35 @@ export default function Lims() {
                     <th className="text-left py-2 pr-4">Name</th>
                     <th className="text-left py-2 pr-4">Type</th>
                     <th className="text-left py-2 pr-4">Conc.</th>
+                    <th className="text-left py-2 pr-4">Volume</th>
                     <th className="text-left py-2 pr-4">Organism</th>
+                    <th className="text-left py-2 pr-4">Tissue</th>
                     <th className="text-left py-2 pr-4">Barcode</th>
                     <th className="text-left py-2 pr-4">Status</th>
                     <th className="text-left py-2 pr-4">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(samplesData?.samples ?? []).length === 0 && (
-                    <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">No samples. Add one to get started.</td></tr>
+                  {samples.length === 0 && (
+                    <tr><td colSpan={9} className="py-8 text-center text-muted-foreground">No samples. Add one to get started.</td></tr>
                   )}
-                  {(samplesData?.samples ?? []).map((s) => (
+                  {samples.map((s) => (
                     <tr key={s.id} className="border-b border-border hover:bg-white/5">
                       <td className="py-2 pr-4 font-bold">{s.name}</td>
                       <td className="py-2 pr-4">{s.type}</td>
                       <td className="py-2 pr-4">{s.concentration != null ? `${s.concentration} ${s.unit ?? ""}` : "-"}</td>
+                      <td className="py-2 pr-4">{s.volume != null ? `${s.volume} uL` : "-"}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{s.organism ?? "-"}</td>
+                      <td className="py-2 pr-4 text-muted-foreground">{s.tissue ?? "-"}</td>
                       <td className="py-2 pr-4 text-muted-foreground">{s.barcode ?? "-"}</td>
                       <td className="py-2 pr-4">
-                        <Badge className={`rounded-none text-xs ${STATUS_COLORS[s.status] ?? "bg-white/10 text-white"}`}>{s.status}</Badge>
+                        <select
+                          value={s.status}
+                          onChange={(ev) => handleUpdateSampleStatus(s.id, ev.target.value)}
+                          className="bg-black border border-border text-white text-xs font-mono p-1"
+                        >
+                          {["active", "depleted", "degraded", "archived"].map((st) => <option key={st} value={st}>{st}</option>)}
+                        </select>
                       </td>
                       <td className="py-2 pr-4">
                         <button onClick={() => handleDeleteSample(s.id)} className="text-muted-foreground hover:text-white transition-colors text-xs" data-testid="delete-sample-btn">
@@ -261,18 +429,21 @@ export default function Lims() {
                     <th className="text-left py-2 pr-4">Type</th>
                     <th className="text-left py-2 pr-4">Protocol</th>
                     <th className="text-left py-2 pr-4">Status</th>
-                    <th className="text-left py-2 pr-4">Actions</th>
+                    <th className="text-left py-2 pr-4">Set Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(expsData?.experiments ?? []).length === 0 && (
+                  {experiments.length === 0 && (
                     <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">No experiments. Create one to get started.</td></tr>
                   )}
-                  {(expsData?.experiments ?? []).map((e) => (
+                  {experiments.map((e) => (
                     <tr key={e.id} className="border-b border-border hover:bg-white/5">
                       <td className="py-2 pr-4 font-bold">{e.name}</td>
                       <td className="py-2 pr-4">{e.type}</td>
                       <td className="py-2 pr-4 text-muted-foreground max-w-[200px] truncate">{e.protocol ?? "-"}</td>
+                      <td className="py-2 pr-4">
+                        <Badge className={`rounded-none text-xs ${STATUS_COLORS[e.status] ?? "bg-white/10 text-white"}`}>{e.status}</Badge>
+                      </td>
                       <td className="py-2 pr-4">
                         <select
                           value={e.status}
@@ -282,9 +453,6 @@ export default function Lims() {
                         >
                           {["planned", "running", "completed", "failed"].map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
-                      </td>
-                      <td className="py-2 pr-4">
-                        <Badge className={`rounded-none text-xs ${STATUS_COLORS[e.status] ?? "bg-white/10 text-white"}`}>{e.status}</Badge>
                       </td>
                     </tr>
                   ))}

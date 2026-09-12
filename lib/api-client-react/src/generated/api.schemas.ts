@@ -32,11 +32,14 @@ export type AnnotatedVariantClinvarAnnotation = { [key: string]: unknown };
 
 export type AnnotatedVariantDbsnpAnnotation = { [key: string]: unknown };
 
+export type AnnotatedVariantExternalUrls = { [key: string]: string };
+
 export interface AnnotatedVariant {
   variant: Variant;
   ensemblAnnotation?: AnnotatedVariantEnsemblAnnotation;
   clinvarAnnotation?: AnnotatedVariantClinvarAnnotation;
   dbsnpAnnotation?: AnnotatedVariantDbsnpAnnotation;
+  externalUrls?: AnnotatedVariantExternalUrls;
 }
 
 export type VariantListResponseChromosomeCounts = { [key: string]: number };
@@ -47,19 +50,9 @@ export interface VariantListResponse {
   chromosomeCounts?: VariantListResponseChromosomeCounts;
 }
 
-export type GenomicsJobStatus =
-  (typeof GenomicsJobStatus)[keyof typeof GenomicsJobStatus];
-
-export const GenomicsJobStatus = {
-  pending: "pending",
-  processing: "processing",
-  completed: "completed",
-  failed: "failed",
-} as const;
-
 export interface GenomicsJob {
   id: string;
-  status: GenomicsJobStatus;
+  status: string;
   filename: string;
   variantCount?: number;
   createdAt: string;
@@ -74,6 +67,15 @@ export interface UploadVcfBody {
   filename: string;
   /** VCF file content as string */
   content: string;
+}
+
+export interface GenomicsUploadResult {
+  id: string;
+  filename: string;
+  status: string;
+  variantCount: number;
+  annotatedCount?: number;
+  createdAt?: string;
 }
 
 export type GenomicsStatsByChromosomeItem = {
@@ -91,12 +93,40 @@ export type GenomicsStatsByConsequenceItem = {
   count: number;
 };
 
+export type GenomicsStatsTopGenesItem = {
+  gene: string;
+  count: number;
+};
+
+export type GenomicsStatsQualityHistogramItem = {
+  bucket: string;
+  count: number;
+};
+
+export type GenomicsStatsAlleleFrequencyHistogramItem = {
+  bucket: string;
+  count: number;
+};
+
 export interface GenomicsStats {
   totalVariants: number;
   byChromosome: GenomicsStatsByChromosomeItem[];
   bySignificance: GenomicsStatsBySignificanceItem[];
   byConsequence: GenomicsStatsByConsequenceItem[];
   recentJobs: number;
+  topGenes?: GenomicsStatsTopGenesItem[];
+  qualityHistogram?: GenomicsStatsQualityHistogramItem[];
+  alleleFrequencyHistogram?: GenomicsStatsAlleleFrequencyHistogramItem[];
+}
+
+export interface Citation {
+  title?: string;
+  journal?: string;
+  year?: string;
+  pmid?: string;
+  doi?: string;
+  pubmedUrl?: string;
+  doiUrl?: string;
 }
 
 export interface ProteinEntry {
@@ -106,11 +136,15 @@ export interface ProteinEntry {
   resolution?: number;
   method?: string;
   depositionDate?: string;
+  releaseDate?: string;
+  citationCount?: number;
+  citations?: Citation[];
   chains?: number;
   atoms?: number;
   ligands?: string[];
   uniprotId?: string;
   gene?: string;
+  pdbUrl?: string;
 }
 
 export interface ProteinSearchResponse {
@@ -133,6 +167,7 @@ export type ProteinStructureBindingSitesItem = {
   siteId: string;
   residues: string[];
   ligand?: string;
+  details?: string;
 };
 
 export interface ProteinStructure {
@@ -146,7 +181,17 @@ export interface ProteinStructure {
   chains?: ProteinStructureChainsItem[];
   secondaryStructure?: ProteinStructureSecondaryStructure;
   bindingSites?: ProteinStructureBindingSitesItem[];
+  uniprotId?: string;
+  citations?: Citation[];
+  citationCount?: number;
+  rcsbUrl?: string;
+  pdbeUrl?: string;
 }
+
+export type ProteinAnnotationsFeatureCountsItem = {
+  type: string;
+  count: number;
+};
 
 export type ProteinAnnotationsGoTermsItem = {
   id: string;
@@ -166,25 +211,21 @@ export interface ProteinAnnotations {
   gene?: string;
   organism?: string;
   subcellularLocation?: string[];
+  sequenceLength?: number;
+  featureCounts?: ProteinAnnotationsFeatureCountsItem[];
+  uniprotUrl?: string;
+  pdbeUrl?: string;
   goTerms?: ProteinAnnotationsGoTermsItem[];
   diseases?: ProteinAnnotationsDiseasesItem[];
   ptms?: string[];
 }
-
-export type GuideRNAStrand =
-  (typeof GuideRNAStrand)[keyof typeof GuideRNAStrand];
-
-export const GuideRNAStrand = {
-  "+": "+",
-  "-": "-",
-} as const;
 
 export interface GuideRNA {
   id: string;
   sequence: string;
   pamSequence: string;
   position: number;
-  strand: GuideRNAStrand;
+  strand: string;
   score: number;
   gcContent?: number;
   offTargetScore?: number;
@@ -204,6 +245,7 @@ export interface CrisprDesignBody {
 export interface CrisprDesignResult {
   jobId: string;
   geneName?: string;
+  species?: string;
   totalCandidates: number;
   guides: GuideRNA[];
   sequenceLength?: number;
@@ -213,10 +255,13 @@ export interface CrisprDesignResult {
 export interface GeneSequence {
   geneName: string;
   ensemblId?: string;
+  species?: string;
   chromosome?: string;
   start?: number;
   end?: number;
   strand?: number;
+  biotype?: string;
+  description?: string;
   sequence: string;
   length: number;
 }
@@ -225,6 +270,8 @@ export interface CrisprJob {
   id: string;
   geneName?: string;
   status: string;
+  pamType?: string;
+  sequenceLength?: number;
   guidesCount?: number;
   createdAt: string;
 }
@@ -233,22 +280,10 @@ export interface CrisprJobList {
   jobs: CrisprJob[];
 }
 
-export type BioEntityType = (typeof BioEntityType)[keyof typeof BioEntityType];
-
-export const BioEntityType = {
-  gene: "gene",
-  disease: "disease",
-  drug: "drug",
-  protein: "protein",
-  organism: "organism",
-  mutation: "mutation",
-  pathway: "pathway",
-} as const;
-
 export interface BioEntity {
   id: string;
   text: string;
-  type: BioEntityType;
+  type: string;
   normalizedId?: string;
   confidence: number;
   startOffset?: number;
@@ -275,6 +310,10 @@ export interface NlpExtractResult {
   relations: EntityRelation[];
   text: string;
   entityCounts?: NlpExtractResultEntityCounts;
+  source?: string;
+  pmid?: string;
+  pubmedUrl?: string;
+  note?: string;
 }
 
 export interface PubmedPaper {
@@ -286,6 +325,9 @@ export interface PubmedPaper {
   year?: number;
   doi?: string;
   keywords?: string[];
+  citationCount?: number;
+  pubmedUrl?: string;
+  doiUrl?: string;
 }
 
 export interface PubmedSearchResponse {
@@ -308,10 +350,16 @@ export interface KnowledgeGraphEdge {
   confidence: number;
 }
 
+export type KnowledgeGraphEntityTypeCountsItem = {
+  type: string;
+  count: number;
+};
+
 export interface KnowledgeGraph {
   nodes: KnowledgeGraphNode[];
   edges: KnowledgeGraphEdge[];
   totalDocuments: number;
+  entityTypeCounts?: KnowledgeGraphEntityTypeCountsItem[];
 }
 
 export interface GenomicFeature {
@@ -324,11 +372,15 @@ export interface GenomicFeature {
   strand?: number;
   biotype?: string;
   description?: string;
+  organism?: string;
+  ncbiGeneUrl?: string;
+  ensemblUrl?: string;
 }
 
 export interface GenomicSearchResponse {
   features: GenomicFeature[];
   total: number;
+  species?: string;
 }
 
 export type GenomicRegionDataVariantsItem = {
@@ -337,6 +389,8 @@ export type GenomicRegionDataVariantsItem = {
   ref: string;
   alt: string;
   consequence?: string;
+  mostSevere?: string;
+  dbsnpUrl?: string;
 };
 
 export type GenomicRegionDataCoverageDataItem = {
@@ -344,13 +398,22 @@ export type GenomicRegionDataCoverageDataItem = {
   coverage: number;
 };
 
+export type GenomicRegionDataConsequenceCountsItem = {
+  consequence: string;
+  count: number;
+};
+
 export interface GenomicRegionData {
   chromosome: string;
   start: number;
   end: number;
+  species?: string;
   genes: GenomicFeature[];
   variants: GenomicRegionDataVariantsItem[];
   coverageData?: GenomicRegionDataCoverageDataItem[];
+  gcContent?: number;
+  sequenceLength?: number;
+  consequenceCounts?: GenomicRegionDataConsequenceCountsItem[];
 }
 
 export interface GenomeTrack {
@@ -365,32 +428,11 @@ export interface GenomeTracksResponse {
   tracks: GenomeTrack[];
 }
 
-export type SampleType = (typeof SampleType)[keyof typeof SampleType];
-
-export const SampleType = {
-  dna: "dna",
-  rna: "rna",
-  protein: "protein",
-  tissue: "tissue",
-  cell_line: "cell_line",
-  blood: "blood",
-  other: "other",
-} as const;
-
-export type SampleStatus = (typeof SampleStatus)[keyof typeof SampleStatus];
-
-export const SampleStatus = {
-  active: "active",
-  depleted: "depleted",
-  archived: "archived",
-  quarantine: "quarantine",
-} as const;
-
 export interface Sample {
   id: string;
   name: string;
-  type: SampleType;
-  status: SampleStatus;
+  type: string;
+  status: string;
   concentration?: number;
   unit?: string;
   volume?: number;
@@ -408,22 +450,9 @@ export interface SampleListResponse {
   total: number;
 }
 
-export type CreateSampleBodyType =
-  (typeof CreateSampleBodyType)[keyof typeof CreateSampleBodyType];
-
-export const CreateSampleBodyType = {
-  dna: "dna",
-  rna: "rna",
-  protein: "protein",
-  tissue: "tissue",
-  cell_line: "cell_line",
-  blood: "blood",
-  other: "other",
-} as const;
-
 export interface CreateSampleBody {
   name: string;
-  type: CreateSampleBodyType;
+  type: string;
   concentration?: number;
   unit?: string;
   volume?: number;
@@ -433,54 +462,20 @@ export interface CreateSampleBody {
   notes?: string;
 }
 
-export type UpdateSampleBodyStatus =
-  (typeof UpdateSampleBodyStatus)[keyof typeof UpdateSampleBodyStatus];
-
-export const UpdateSampleBodyStatus = {
-  active: "active",
-  depleted: "depleted",
-  archived: "archived",
-  quarantine: "quarantine",
-} as const;
-
 export interface UpdateSampleBody {
   name?: string;
-  status?: UpdateSampleBodyStatus;
+  status?: string;
   concentration?: number;
   volume?: number;
   storageLocation?: string;
   notes?: string;
 }
 
-export type ExperimentType =
-  (typeof ExperimentType)[keyof typeof ExperimentType];
-
-export const ExperimentType = {
-  pcr: "pcr",
-  sequencing: "sequencing",
-  western_blot: "western_blot",
-  elisa: "elisa",
-  flow_cytometry: "flow_cytometry",
-  microscopy: "microscopy",
-  other: "other",
-} as const;
-
-export type ExperimentStatus =
-  (typeof ExperimentStatus)[keyof typeof ExperimentStatus];
-
-export const ExperimentStatus = {
-  planned: "planned",
-  running: "running",
-  completed: "completed",
-  failed: "failed",
-  cancelled: "cancelled",
-} as const;
-
 export interface Experiment {
   id: string;
   name: string;
-  type: ExperimentType;
-  status: ExperimentStatus;
+  type: string;
+  status: string;
   sampleIds?: string[];
   protocol?: string;
   notes?: string;
@@ -495,53 +490,39 @@ export interface ExperimentListResponse {
   total: number;
 }
 
-export type CreateExperimentBodyType =
-  (typeof CreateExperimentBodyType)[keyof typeof CreateExperimentBodyType];
-
-export const CreateExperimentBodyType = {
-  pcr: "pcr",
-  sequencing: "sequencing",
-  western_blot: "western_blot",
-  elisa: "elisa",
-  flow_cytometry: "flow_cytometry",
-  microscopy: "microscopy",
-  other: "other",
-} as const;
-
 export interface CreateExperimentBody {
   name: string;
-  type: CreateExperimentBodyType;
+  type: string;
   sampleIds?: string[];
   protocol?: string;
   notes?: string;
 }
 
-export type UpdateExperimentBodyStatus =
-  (typeof UpdateExperimentBodyStatus)[keyof typeof UpdateExperimentBodyStatus];
-
-export const UpdateExperimentBodyStatus = {
-  planned: "planned",
-  running: "running",
-  completed: "completed",
-  failed: "failed",
-  cancelled: "cancelled",
-} as const;
-
 export interface UpdateExperimentBody {
   name?: string;
-  status?: UpdateExperimentBodyStatus;
+  status?: string;
   protocol?: string;
   notes?: string;
   completedAt?: string;
 }
 
-export type LimsStatsSamplesByTypeItem = {
-  type: string;
+export type LimsStatsExperimentsByStatusItem = {
+  status: string;
   count: number;
 };
 
-export type LimsStatsExperimentsByStatusItem = {
-  status: string;
+export type LimsStatsConcentrationHistogramItem = {
+  bucket: string;
+  count: number;
+};
+
+export type LimsStatsVolumeHistogramItem = {
+  bucket: string;
+  count: number;
+};
+
+export type LimsStatsCreationTimelineItem = {
+  month: string;
   count: number;
 };
 
@@ -552,15 +533,30 @@ export type LimsStatsRecentActivityItem = {
   timestamp: string;
 };
 
+export interface KeyValueCount {
+  key: string;
+  count: number;
+}
+
 export interface LimsStats {
   totalSamples: number;
   activeSamples: number;
   totalExperiments: number;
   runningExperiments: number;
-  samplesByType: LimsStatsSamplesByTypeItem[];
+  samplesByType: KeyValueCount[];
+  samplesByStatus?: KeyValueCount[];
   experimentsByStatus: LimsStatsExperimentsByStatusItem[];
+  experimentsByType?: KeyValueCount[];
+  concentrationHistogram?: LimsStatsConcentrationHistogramItem[];
+  volumeHistogram?: LimsStatsVolumeHistogramItem[];
+  creationTimeline?: LimsStatsCreationTimelineItem[];
   recentActivity: LimsStatsRecentActivityItem[];
 }
+
+export type CompoundIndicationsItem = {
+  term: string;
+  maxPhase?: number;
+};
 
 export interface Compound {
   chemblId: string;
@@ -576,9 +572,18 @@ export interface Compound {
   rotatableBonds?: number;
   aromaticRings?: number;
   qedScore?: number;
+  ro5Violations?: number;
+  psa?: number;
   maxPhase?: number;
   indication?: string;
   atcClass?: string;
+  atcClasses?: string[];
+  firstApproval?: number;
+  moleculeType?: string;
+  chemblUrl?: string;
+  pubchemUrl?: string;
+  indications?: CompoundIndicationsItem[];
+  totalIndications?: number;
 }
 
 export interface CompoundSearchResponse {
@@ -596,13 +601,23 @@ export interface CompoundActivity {
   standardUnits?: string;
   relation?: string;
   assayType?: string;
+  assayDescription?: string;
   pchembl?: number;
+  activityComment?: string;
+  documentYear?: number;
+  targetChemblUrl?: string;
 }
+
+export type CompoundActivitiesResponseTopTargetsItem = {
+  target: string;
+  count: number;
+};
 
 export interface CompoundActivitiesResponse {
   chemblId: string;
   activities: CompoundActivity[];
   total: number;
+  topTargets?: CompoundActivitiesResponseTopTargetsItem[];
 }
 
 export interface DrugTarget {
@@ -612,6 +627,8 @@ export interface DrugTarget {
   organism?: string;
   geneNames?: string[];
   uniprotId?: string;
+  chemblUrl?: string;
+  uniprotUrl?: string;
 }
 
 export interface TargetSearchResponse {
@@ -631,10 +648,11 @@ export type DrugDashboardStatsTopIndicationsItem = {
 };
 
 export interface DrugDashboardStats {
-  totalCompoundsSearched: number;
   approvedDrugs: number;
   uniqueTargets: number;
-  recentSearches: DrugDashboardStatsRecentSearchesItem[];
+  totalIndications?: number;
+  phase4Indications?: number;
+  recentSearches?: DrugDashboardStatsRecentSearchesItem[];
   topIndications: DrugDashboardStatsTopIndicationsItem[];
 }
 
@@ -642,35 +660,41 @@ export interface GeneExpressionEntry {
   geneId: string;
   geneName: string;
   tissue: string;
+  tissueName?: string;
+  ontologyId?: string;
   tpm: number;
   median?: number;
   unit?: string;
+  gtexUrl?: string;
 }
+
+export type ExpressionSearchResponseMedianExpressionHistogramItem = {
+  bucket: string;
+  count: number;
+};
 
 export interface ExpressionSearchResponse {
   gene: string;
+  geneId?: string;
+  chromosome?: string;
+  start?: number;
+  end?: number;
+  description?: string;
   expressions: GeneExpressionEntry[];
   tissues: string[];
   maxTpm?: number;
+  medianExpressionHistogram?: ExpressionSearchResponseMedianExpressionHistogramItem[];
+  gtexUrl?: string;
+  ensemblUrl?: string;
 }
-
-export type TranscriptomicsJobStatus =
-  (typeof TranscriptomicsJobStatus)[keyof typeof TranscriptomicsJobStatus];
-
-export const TranscriptomicsJobStatus = {
-  pending: "pending",
-  aligning: "aligning",
-  quantifying: "quantifying",
-  analyzing: "analyzing",
-  completed: "completed",
-  failed: "failed",
-} as const;
 
 export interface TranscriptomicsJob {
   id: string;
   name: string;
-  status: TranscriptomicsJobStatus;
+  status: string;
   sampleType?: string;
+  referenceGenome?: string;
+  pairedEnd?: string;
   readsCount?: number;
   genesDetected?: number;
   createdAt: string;
@@ -692,10 +716,145 @@ export type TissueListResponseTissuesItem = {
   id: string;
   name: string;
   sampleCount?: number;
+  colorHex?: string;
+  expressedGeneCount?: number;
+  eGeneCount?: number;
 };
 
 export interface TissueListResponse {
   tissues: TissueListResponseTissuesItem[];
+}
+
+export interface Species {
+  name: string;
+  displayName?: string;
+  commonName?: string;
+}
+
+export interface SpeciesListResponse {
+  species: Species[];
+  total: number;
+}
+
+export type SearchResultItemFields = { [key: string]: unknown };
+
+export type SearchResultItemLinks = { [key: string]: string };
+
+export interface SearchResultItem {
+  id: string;
+  collection: string;
+  rowId: string;
+  score: number;
+  snippet?: string;
+  fields: SearchResultItemFields;
+  links?: SearchResultItemLinks;
+}
+
+export interface SearchResponse {
+  query: string;
+  total: number;
+  results: SearchResultItem[];
+}
+
+export interface SearchSchemaEntry {
+  collection: string;
+  count: number;
+  searchableFields: string[];
+  metadataFields?: string[];
+}
+
+export interface SearchSchemaResponse {
+  collections: SearchSchemaEntry[];
+}
+
+export type SearchFacetsResponseFacetsItem = {
+  key: string;
+  count: number;
+};
+
+export interface SearchFacetsResponse {
+  field: string;
+  facets: SearchFacetsResponseFacetsItem[];
+  total: number;
+}
+
+export type StatsOverviewDatasets = { [key: string]: number };
+
+export type StatsOverviewModuleStats = { [key: string]: unknown };
+
+export type StatsOverviewChartsVariantActivityItem = {
+  date: string;
+  count: number;
+};
+
+export type StatsOverviewCharts = {
+  variantSignificance: KeyValueCount[];
+  entityTypeBreakdown: KeyValueCount[];
+  experimentStatus: KeyValueCount[];
+  sampleTypes: KeyValueCount[];
+  variantActivity: StatsOverviewChartsVariantActivityItem[];
+};
+
+export interface StatsOverview {
+  datasets: StatsOverviewDatasets;
+  totalRecords: number;
+  moduleStats: StatsOverviewModuleStats;
+  charts: StatsOverviewCharts;
+}
+
+export interface RelatedProteinsResponse {
+  pdbId: string;
+  clusterId?: string;
+  similarityCutoff?: number;
+  related: ProteinEntry[];
+}
+
+export type Conformer3dAtomsItem = {
+  x: number;
+  y: number;
+  z: number;
+  element: string;
+};
+
+export type Conformer3dBondsItem = {
+  a: number;
+  b: number;
+  order: number;
+};
+
+export interface Conformer3d {
+  chemblId: string;
+  cid: string;
+  name?: string;
+  atoms: Conformer3dAtomsItem[];
+  bonds: Conformer3dBondsItem[];
+  atomCount?: number;
+  bondCount?: number;
+  pubchemUrl?: string;
+  molecularFormula?: string;
+  molecularWeight?: string;
+}
+
+export type SequenceContextResponseVariant = {
+  id?: string;
+  chromosome?: string;
+  position?: number;
+  ref?: string;
+  alt?: string;
+  rsId?: string;
+  gene?: string;
+  consequence?: string;
+  significance?: string;
+};
+
+export interface SequenceContextResponse {
+  variant: SequenceContextResponseVariant;
+  sequence: string;
+  leftFlank: string;
+  refAllele: string;
+  rightFlank: string;
+  flank: number;
+  source?: string;
 }
 
 export type ListVariantsParams = {
@@ -704,6 +863,10 @@ export type ListVariantsParams = {
   significance?: string;
   limit?: number;
   offset?: number;
+};
+
+export type GetVariantSequenceContextParams = {
+  flank?: number;
 };
 
 export type GetGenomicsStatsParams = {
@@ -744,11 +907,16 @@ export type ListSamplesParams = {
   type?: string;
   status?: string;
   limit?: number;
+  offset?: number;
+  q?: string;
 };
 
 export type ListExperimentsParams = {
   status?: string;
+  type?: string;
   limit?: number;
+  offset?: number;
+  q?: string;
 };
 
 export type SearchCompoundsParams = {
@@ -768,4 +936,21 @@ export type SearchTargetsParams = {
 export type SearchGeneExpressionParams = {
   gene: string;
   tissue?: string;
+};
+
+export type GlobalSearchParams = {
+  q: string;
+  /**
+   * Comma-separated collection names to scope the search
+   */
+  collections?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type GetSearchFacetsParams = {
+  field: string;
+  collections?: string;
+  q?: string;
+  limit?: number;
 };

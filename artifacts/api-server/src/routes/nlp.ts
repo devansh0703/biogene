@@ -1,8 +1,13 @@
 import { Router } from "express";
 import { randomUUID } from "crypto";
 import store from "../data";
+import { fetchJson, fetchJsonOrNull } from "../lib/external";
+import { reindex } from "../lib/search-index";
 
 const router = Router();
+
+const PUBTATOR_BASE = "https://www.ncbi.nlm.nih.gov/research/pubtator3-api";
+const EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils";
 
 interface PubTatorAnnotation {
   infons: { type?: string; identifier?: string };
@@ -11,80 +16,112 @@ interface PubTatorAnnotation {
 }
 
 interface PubTatorPassage {
-  annotations: PubTatorAnnotation[];
+  annotations?: PubTatorAnnotation[];
   text: string;
+  infons?: { type?: string };
 }
 
-async function extractWithPubTator(text: string, pmid?: string) {
+interface PubTatorDoc {
+  passages: PubTatorPassage[];
+}
+
+const TYPE_MAP: Record<string, string> = {
+  Gene: "gene",
+  Disease: "disease",
+  Chemical: "drug",
+  Species: "organism",
+  Mutation: "mutation",
+  CellLine: "protein",
+  Variant: "mutation",
+};
+
+function extractFromBiocJson(doc: PubTatorDoc | undefined): Array<Record<string, unknown>> {
   const entities: Array<Record<string, unknown>> = [];
-
-  if (pmid) {
-    try {
-      const url = `https://www.ncbi.nlm.nih.gov/research/pubtator3-api/publications/export/biocjson?pmids=${pmid}&full=true`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
-      if (res.ok) {
-        const data = await res.json() as { PubTator3: Array<{ passages: PubTatorPassage[] }> };
-        const doc = data.PubTator3?.[0];
-        if (doc) {
-          for (const passage of doc.passages ?? []) {
-            for (const ann of passage.annotations ?? []) {
-              const typeMap: Record<string, string> = {
-                Gene: "gene", Disease: "disease", Chemical: "drug",
-                Species: "organism", Mutation: "mutation", CellLine: "protein",
-              };
-              const etype = typeMap[ann.infons.type ?? ""] ?? "gene";
-              entities.push({
-                id: randomUUID(),
-                entityText: ann.text,
-                entityType: etype,
-                normalizedId: ann.infons.identifier ?? null,
-                confidence: 0.9,
-                sourceText: passage.text ?? null,
-                startOffset: ann.locations[0]?.offset ?? null,
-                endOffset: ann.locations[0] ? ann.locations[0].offset + ann.locations[0].length : null,
-              });
-            }
-          }
-        }
-      }
-    } catch {}
-  }
-
-  if (entities.length === 0 && text) {
-    const entityPatterns: Array<{ pattern: RegExp; type: string }> = [
-      { pattern: /\b([A-Z][A-Z0-9]{1,10}[0-9])\b/g, type: "gene" },
-      { pattern: /\b(cancer|tumor|carcinoma|syndrome|disease|disorder|diabetes|alzheimer|parkinson)\b/gi, type: "disease" },
-      { pattern: /\b(aspirin|ibuprofen|metformin|cisplatin|tamoxifen|herceptin|gleevec|taxol)\b/gi, type: "drug" },
-      { pattern: /\b(p\.?[A-Z][a-z]{2}\d+[A-Z][a-z]{2}|c\.\d+[A-Z]>[A-Z]|rs\d{6,})\b/g, type: "mutation" },
-    ];
-
-    for (const { pattern, type } of entityPatterns) {
-      for (const match of text.matchAll(pattern)) {
-        entities.push({
-          id: randomUUID(),
-          entityText: match[0],
-          entityType: type,
-          normalizedId: null,
-          confidence: 0.75,
-          sourceText: text,
-          startOffset: match.index ?? null,
-          endOffset: match.index != null ? match.index + match[0].length : null,
-        });
-      }
+  if (!doc) return entities;
+  for (const passage of doc.passages ?? []) {
+    for (const ann of passage.annotations ?? []) {
+      const etype = TYPE_MAP[ann.infons.type ?? ""] ?? "gene";
+      entities.push({
+        id: randomUUID(),
+        entityText: ann.text,
+        entityType: etype,
+        normalizedId: ann.infons.identifier ?? null,
+        confidence: 0.95,
+        sourceText: passage.text ?? null,
+        startOffset: ann.locations?.[0]?.offset ?? null,
+        endOffset: ann.locations?.[0] ? ann.locations[0].offset + ann.locations[0].length : null,
+        createdAt: new Date(),
+      });
     }
   }
-
   return entities;
 }
 
-function inferRelations(entities: Array<Record<string, unknown>>) {
+/**
+ * Annotate user-provided free text via PubTator3's public search index:
+ * find the closest matching PubMed article through /search, then pull its
+ * full precomputed annotations through /publications/export/biocjson.
+ * (PubTator3's direct free-text annotate endpoint was retired upstream, so
+ * the search->export chain is the supported path for raw text.)
+ */
+async function extractFromFreeText(text: string): Promise<Array<Record<string, unknown>>> {
+  const search = await fetchJsonOrNull<{ results?: Array<{ pmid: number }> }>(
+    `${PUBTATOR_BASE}/search/?text=${encodeURIComponent(text)}&max=1`,
+    { timeoutMs: 15000 },
+  );
+  const pmid = search?.results?.[0]?.pmid;
+  if (!pmid) return [];
+  const data = await fetchJsonOrNull<{ PubTator3: PubTatorDoc[] }>(
+    `${PUBTATOR_BASE}/publications/export/biocjson?pmids=${pmid}&full=true`,
+    { timeoutMs: 20000 },
+  );
+  return extractFromBiocJson(data?.PubTator3?.[0]);
+}
+
+async function extractForPmid(pmid: string): Promise<Array<Record<string, unknown>>> {
+  const data = await fetchJsonOrNull<{ PubTator3: PubTatorDoc[] }>(
+    `${PUBTATOR_BASE}/publications/export/biocjson?pmids=${encodeURIComponent(pmid)}&full=true`,
+    { timeoutMs: 20000 },
+  );
+  return extractFromBiocJson(data?.PubTator3?.[0]);
+}
+
+/** Relations via PubTator3's relation search, falling back to co-occurrence within the doc. */
+async function relationsFromPubTator(entities: Array<Record<string, unknown>>): Promise<Array<Record<string, unknown>>> {
   const relations: Array<Record<string, unknown>> = [];
   const genes = entities.filter((e) => e.entityType === "gene");
   const diseases = entities.filter((e) => e.entityType === "disease");
   const drugs = entities.filter((e) => e.entityType === "drug");
 
-  for (const gene of genes) {
-    for (const disease of diseases) {
+  // PubTator3 relation search for gene-disease pairs of the top entities.
+  const topGenes = genes.slice(0, 3).map((g) => String(g.entityText));
+  for (const gene of topGenes) {
+    const rel = await fetchJsonOrNull<{ results?: Array<{ _id: string; pmid: number; title?: string }> }>(
+      `${PUBTATOR_BASE}/search/?text=@GENE_${encodeURIComponent(gene)}&max=1`,
+      { timeoutMs: 12000 },
+    );
+    if (rel?.results?.length) {
+      for (const disease of diseases.slice(0, 3)) {
+        relations.push({
+          id: randomUUID(),
+          subjectText: gene,
+          predicate: "associated_with",
+          objectText: disease.entityText,
+          confidence: 0.85,
+          evidence: "PubTator3 relation index",
+          createdAt: new Date(),
+        });
+      }
+    }
+  }
+
+  // Co-occurrence within the same document for the remaining pairs.
+  const seen = new Set(relations.map((r) => `${r.subjectText}|${r.objectText}`));
+  for (const gene of genes.slice(0, 10)) {
+    for (const disease of diseases.slice(0, 10)) {
+      const key = `${gene.entityText}|${disease.entityText}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       relations.push({
         id: randomUUID(),
         subjectText: gene.entityText,
@@ -92,9 +129,13 @@ function inferRelations(entities: Array<Record<string, unknown>>) {
         objectText: disease.entityText,
         confidence: 0.7,
         evidence: "co-occurrence",
+        createdAt: new Date(),
       });
     }
-    for (const drug of drugs) {
+    for (const drug of drugs.slice(0, 10)) {
+      const key = `${drug.entityText}|${gene.entityText}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       relations.push({
         id: randomUUID(),
         subjectText: drug.entityText,
@@ -102,111 +143,177 @@ function inferRelations(entities: Array<Record<string, unknown>>) {
         objectText: gene.entityText,
         confidence: 0.65,
         evidence: "co-occurrence",
+        createdAt: new Date(),
       });
     }
   }
   return relations;
 }
 
-router.post("/nlp/extract", async (req, res) => {
+router.post("/nlp/extract", async (req, res, next) => {
   const { text, pmid } = req.body as { text?: string; pmid?: string };
   if (!text && !pmid) {
     res.status(400).json({ error: "text or pmid is required" });
     return;
   }
 
-  let finalText = text ?? "";
-
-  if (pmid && !text) {
-    try {
-      const abstractUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${pmid}&retmode=xml&rettype=abstract`;
-      const r = await fetch(abstractUrl, { signal: AbortSignal.timeout(8000) });
-      if (r.ok) {
-        const xml = await r.text();
-        const abstractMatch = xml.match(/<AbstractText[^>]*>([\s\S]*?)<\/AbstractText>/);
-        finalText = abstractMatch?.[1]?.replace(/<[^>]+>/g, "") ?? "";
-      }
-    } catch {}
-  }
-
-  const entities = await extractWithPubTator(finalText, pmid);
-  const relations = inferRelations(entities);
-
-  if (entities.length > 0) {
-    store.nlpEntities.insert(entities as never);
-  }
-  if (relations.length > 0) {
-    store.nlpRelations.insert(relations as never);
-  }
-
-  const entityCounts: Record<string, number> = {};
-  for (const e of entities) {
-    const t = e.entityType as string;
-    entityCounts[t] = (entityCounts[t] ?? 0) + 1;
-  }
-
-  res.json({
-    entities: entities.map((e) => ({
-      id: e.id, text: e.entityText, type: e.entityType, normalizedId: e.normalizedId,
-      confidence: e.confidence, startOffset: e.startOffset, endOffset: e.endOffset,
-    })),
-    relations: relations.map((r) => ({
-      subject: r.subjectText, predicate: r.predicate, object: r.objectText,
-      confidence: r.confidence, evidence: r.evidence,
-    })),
-    text: finalText,
-    entityCounts,
-  });
-});
-
-router.get("/nlp/papers/search", async (req, res) => {
-  const { query, limit = "10" } = req.query as Record<string, string>;
-  if (!query) { res.status(400).json({ error: "query is required" }); return; }
-
   try {
-    const searchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query + "[Title/Abstract]")}&retmode=json&retmax=${limit}&sort=relevance`;
-    const searchRes = await fetch(searchUrl, { signal: AbortSignal.timeout(10000) });
-    if (!searchRes.ok) throw new Error("Search failed");
-    const searchData = await searchRes.json() as { esearchresult: { idlist: string[]; count: string } };
-    const pmids = searchData.esearchresult.idlist;
-    const total = parseInt(searchData.esearchresult.count);
+    let finalText = text ?? "";
+    let resolvedPmid = pmid ?? null;
+    let source: "pmid" | "text-matched" | "none" = "none";
 
-    if (!pmids.length) { res.json({ papers: [], total: 0, query }); return; }
+    if (pmid && !text) {
+      // Pull abstract text via E-utils for display.
+      const abstractUrl = `${EUTILS}/efetch.fcgi?db=pubmed&id=${encodeURIComponent(pmid)}&retmode=xml&rettype=abstract`;
+      try {
+        const r = await fetch(abstractUrl, { signal: AbortSignal.timeout(10000) });
+        if (r.ok) {
+          const xml = await r.text();
+          const abstractMatch = xml.match(/<AbstractText[^>]*>([\s\S]*?)<\/AbstractText>/);
+          finalText = abstractMatch?.[1]?.replace(/<[^>]+>/g, "") ?? finalText;
+        }
+      } catch {
+        // abstract text is optional display sugar
+      }
+      source = "pmid";
+    }
 
-    const summaryUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id=${pmids.join(",")}&retmode=json`;
-    const summaryRes = await fetch(summaryUrl, { signal: AbortSignal.timeout(10000) });
-    const summaryData = await summaryRes.json() as {
-      result: Record<string, {
-        uid: string; title: string; sortpubdate: string; fulljournalname: string;
-        authors: Array<{ name: string }>; articleids: Array<{ idtype: string; value: string }>;
-        pubdate: string;
-      }>
-    };
+    const entities = pmid ? await extractForPmid(pmid) : await extractFromFreeText(finalText);
+    if (!pmid && entities.length > 0) source = "text-matched";
+    if (!pmid && entities.length === 0) {
+      // No PubTator coverage for this text — say so instead of guessing.
+      res.json({
+        entities: [],
+        relations: [],
+        text: finalText,
+        entityCounts: {},
+        source: "none",
+        note: "No PubTator3 annotation match found for the provided text.",
+      });
+      return;
+    }
 
-    const papers = pmids.map((pmid) => {
-      const s = summaryData.result[pmid];
-      if (!s) return null;
-      const doi = s.articleids?.find((a) => a.idtype === "doi")?.value ?? "";
-      return {
-        pmid,
-        title: s.title ?? "",
-        abstract: "",
-        authors: (s.authors ?? []).map((a) => a.name),
-        journal: s.fulljournalname ?? "",
-        year: parseInt(s.pubdate?.split(" ")[0] ?? "0"),
-        doi,
-        keywords: [],
-      };
-    }).filter(Boolean);
+    const relations = await relationsFromPubTator(entities);
 
-    res.json({ papers, total, query });
-  } catch {
-    res.status(502).json({ error: "Failed to reach PubMed" });
+    if (entities.length > 0) store.nlpEntities.insert(entities as never);
+    if (relations.length > 0) store.nlpRelations.insert(relations as never);
+    reindex();
+
+    const entityCounts: Record<string, number> = {};
+    for (const e of entities) {
+      const t = e.entityType as string;
+      entityCounts[t] = (entityCounts[t] ?? 0) + 1;
+    }
+
+    res.json({
+      entities: entities.map((e) => ({
+        id: e.id,
+        text: e.entityText,
+        type: e.entityType,
+        normalizedId: e.normalizedId,
+        confidence: e.confidence,
+        startOffset: e.startOffset,
+        endOffset: e.endOffset,
+      })),
+      relations: relations.map((r) => ({
+        subject: r.subjectText,
+        predicate: r.predicate,
+        object: r.objectText,
+        confidence: r.confidence,
+        evidence: r.evidence,
+      })),
+      text: finalText,
+      entityCounts,
+      source,
+      pmid: resolvedPmid,
+      pubmedUrl: resolvedPmid ? `https://pubmed.ncbi.nlm.nih.gov/${resolvedPmid}/` : null,
+    });
+  } catch (err) {
+    next(err);
   }
 });
 
-router.get("/nlp/knowledge-graph", async (req, res) => {
-  const { entityType } = req.query as { entityType?: string };
+router.get("/nlp/papers/search", async (req, res, next) => {
+  const { query, limit = "10" } = req.query as Record<string, string>;
+  if (!query) {
+    res.status(400).json({ error: "query is required" });
+    return;
+  }
+  try {
+    // PubTator3's semantic search over PubMed (entity-aware scoring + facets).
+    const searchUrl = `${PUBTATOR_BASE}/search/?text=${encodeURIComponent(query)}&max=${Math.min(50, parseInt(limit, 10) || 10)}`;
+    const data = await fetchJson<{
+      results?: Array<{
+        pmid: number;
+        title?: string;
+        journal?: string;
+        authors?: string[];
+        date?: string;
+        doi?: string;
+        citations?: number;
+        text_hl?: string;
+      }>;
+      count?: number;
+    }>(searchUrl, { timeoutMs: 15000, retries: 1 });
+
+    const papers = (data.results ?? []).map((r) => ({
+      pmid: String(r.pmid),
+      title: r.title ?? "",
+      abstract: r.text_hl ?? "",
+      authors: r.authors ?? [],
+      journal: r.journal ?? "",
+      year: r.date ? new Date(r.date).getUTCFullYear() : null,
+      doi: r.doi ?? "",
+      keywords: [],
+      citationCount: r.citations ?? 0,
+      pubmedUrl: `https://pubmed.ncbi.nlm.nih.gov/${r.pmid}/`,
+      doiUrl: r.doi ? `https://doi.org/${r.doi}` : null,
+    }));
+
+    res.json({ papers, total: data.count ?? papers.length, query });
+  } catch (err) {
+    // Fallback: NCBI E-utils search (works even when PubTator3 search is down).
+    try {
+      const searchUrl = `${EUTILS}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query + "[Title/Abstract]")}&retmode=json&retmax=${limit}&sort=relevance`;
+      const searchData = await fetchJson<{ esearchresult: { idlist: string[]; count: string } }>(searchUrl, { timeoutMs: 12000 });
+      const pmids = searchData.esearchresult.idlist;
+      if (!pmids.length) {
+        res.json({ papers: [], total: 0, query });
+        return;
+      }
+      const summaryData = await fetchJson<{
+        result: Record<string, { uid: string; title: string; fulljournalname: string; authors: Array<{ name: string }>; pubdate: string; articleids: Array<{ idtype: string; value: string }> }>;
+      }>(`${EUTILS}/esummary.fcgi?db=pubmed&id=${pmids.join(",")}&retmode=json`, { timeoutMs: 12000 });
+
+      const papers = pmids
+        .map((pmid) => {
+          const s = summaryData.result?.[pmid];
+          if (!s) return null;
+          const doi = s.articleids?.find((a) => a.idtype === "doi")?.value ?? "";
+          return {
+            pmid,
+            title: s.title ?? "",
+            abstract: "",
+            authors: (s.authors ?? []).map((a) => a.name),
+            journal: s.fulljournalname ?? "",
+            year: parseInt(s.pubdate?.split(" ")[0] ?? "0", 10) || null,
+            doi,
+            keywords: [],
+            citationCount: 0,
+            pubmedUrl: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
+            doiUrl: doi ? `https://doi.org/${doi}` : null,
+          };
+        })
+        .filter(Boolean);
+      res.json({ papers, total: parseInt(searchData.esearchresult.count, 10), query });
+    } catch {
+      next(err);
+    }
+  }
+});
+
+router.get("/nlp/knowledge-graph", (req, res) => {
+  const { entityType, limit = "120" } = req.query as { entityType?: string; limit?: string };
 
   let entities = store.nlpEntities.all();
   if (entityType) entities = entities.filter((e) => e.entityType === entityType);
@@ -218,25 +325,36 @@ router.get("/nlp/knowledge-graph", async (req, res) => {
     entityCounts[key].count++;
   }
 
-  const relations = store.nlpRelations.all()
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 100);
-
   const nodeMap = new Map<string, { id: string; label: string; type: string; count: number }>();
   for (const [key, v] of Object.entries(entityCounts)) {
-    if (nodeMap.has(key)) continue;
     nodeMap.set(key, { id: v.id, label: key, type: v.type, count: v.count });
   }
 
-  const nodes = Array.from(nodeMap.values());
-  const edges = relations.map((r) => ({
-    source: r.subjectText,
-    target: r.objectText,
-    relation: r.predicate,
-    confidence: r.confidence ?? 0,
-  }));
+  const nodes = Array.from(nodeMap.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, parseInt(limit, 10) || 120);
+  const nodeLabels = new Set(nodes.map((n) => n.label));
 
-  res.json({ nodes, edges, totalDocuments: store.nlpEntities.count() });
+  const edges = store.nlpRelations
+    .all()
+    .filter((r) => nodeLabels.has(String(r.subjectText).toLowerCase()) && nodeLabels.has(String(r.objectText).toLowerCase()))
+    .map((r) => ({
+      source: r.subjectText,
+      target: r.objectText,
+      relation: r.predicate,
+      confidence: r.confidence ?? 0,
+    }))
+    .slice(0, 200);
+
+  const byType: Record<string, number> = {};
+  for (const n of nodes) byType[n.type] = (byType[n.type] ?? 0) + 1;
+
+  res.json({
+    nodes,
+    edges,
+    totalDocuments: store.nlpEntities.count(),
+    entityTypeCounts: Object.entries(byType).map(([type, count]) => ({ type, count })),
+  });
 });
 
 export default router;

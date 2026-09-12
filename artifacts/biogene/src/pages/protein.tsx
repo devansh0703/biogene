@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef } from "react";
 import {
   useSearchProteins, useGetProteinStructure, useGetProteinAnnotations, useGetFeaturedProteins,
+  useGetRelatedProteins,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { ChartCard, CountBarChart, type Count } from "@/components/charts";
+import { ExternalLink } from "lucide-react";
 
 interface NglStageType {
   loadFile(url: string, params?: Record<string, unknown>): Promise<unknown>;
@@ -95,25 +98,35 @@ export default function Protein() {
   const { data: featuredData, isLoading: featuredLoading } = useGetFeaturedProteins();
   const { data: searchData, isLoading: searchLoading } = useSearchProteins(
     { query: searchTerm },
-    { query: { enabled: !!searchTerm } }
+    { query: { enabled: !!searchTerm, queryKey: ["protein-search", searchTerm] } },
   );
   const { data: structureData, isLoading: structLoading } = useGetProteinStructure(
     selectedPdbId ?? "",
-    { query: { enabled: !!selectedPdbId } }
+    { query: { enabled: !!selectedPdbId, queryKey: ["protein-structure", selectedPdbId] } },
   );
   const { data: annotationData, isLoading: annotLoading } = useGetProteinAnnotations(
     selectedPdbId ?? "",
-    { query: { enabled: !!selectedPdbId } }
+    { query: { enabled: !!selectedPdbId, queryKey: ["protein-annotations", selectedPdbId] } },
+  );
+  const { data: relatedData, isLoading: relatedLoading } = useGetRelatedProteins(
+    selectedPdbId ?? "",
+    { query: { enabled: !!selectedPdbId, queryKey: ["protein-related", selectedPdbId] } },
   );
 
   const displayedProteins = searchTerm ? (searchData?.proteins ?? []) : (featuredData?.proteins ?? []);
   const isLoadingList = searchTerm ? searchLoading : featuredLoading;
 
+  const ligandCounts: Count[] =
+    (
+      (annotationData as { featureCounts?: Array<{ type: string; count: number }> } | undefined)
+        ?.featureCounts ?? []
+    ).map((f) => ({ key: f.type, count: f.count }));
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold uppercase tracking-tight">Protein Structure</h1>
-        <p className="text-muted-foreground font-mono mt-1 text-sm">RCSB PDB Search + NGL 3D Viewer + UniProt Annotations</p>
+        <p className="text-muted-foreground font-mono mt-1 text-sm">RCSB PDB Search + NGL 3D Viewer + UniProt Annotations + Sequence Clusters</p>
       </div>
 
       <div className="flex gap-2">
@@ -150,7 +163,25 @@ export default function Protein() {
             <Card className="rounded-none border-border bg-card">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm uppercase flex items-center justify-between">
-                  <span>{selectedPdbId} — 3D Structure</span>
+                  <span className="flex items-center gap-2">
+                    {selectedPdbId} — 3D Structure
+                    <a
+                      href={`https://www.rcsb.org/structure/${selectedPdbId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-muted-foreground hover:text-white flex items-center gap-0.5 text-xs font-mono"
+                    >
+                      RCSB <ExternalLink className="h-2.5 w-2.5" />
+                    </a>
+                    <a
+                      href={`https://www.ebi.ac.uk/pdbe/entry/pdb/${selectedPdbId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-muted-foreground hover:text-white flex items-center gap-0.5 text-xs font-mono"
+                    >
+                      PDBe <ExternalLink className="h-2.5 w-2.5" />
+                    </a>
+                  </span>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -179,11 +210,11 @@ export default function Protein() {
                       ["Method", structureData.method],
                       ["Resolution", structureData.resolution ? `${structureData.resolution}Å` : "N/A"],
                       ["Organism", structureData.organism],
-                      ["Chains", structureData.chains?.length ?? 0],
+                      ["Helices / Sheets", structureData.secondaryStructure ? `${structureData.secondaryStructure.helices} / ${structureData.secondaryStructure.sheets}` : "—"],
                     ].map(([k, v]) => (
                       <div key={String(k)} className="flex justify-between border-b border-border py-1">
                         <span className="text-muted-foreground">{k}</span>
-                        <span className="truncate max-w-[150px]">{String(v)}</span>
+                        <span className="truncate max-w-[150px]">{String(v ?? "—")}</span>
                       </div>
                     ))}
                   </div>
@@ -199,6 +230,43 @@ export default function Protein() {
                       </div>
                     </div>
                   )}
+                  {(structureData.bindingSites ?? []).length > 0 && (
+                    <div>
+                      <p className="text-muted-foreground uppercase mb-1">Binding Sites</p>
+                      <div className="flex flex-wrap gap-1">
+                        {structureData.bindingSites!.map((s) => (
+                          <span key={s.siteId} className="border border-border px-2 py-0.5 text-xs" title={s.details}>
+                            {s.siteId}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {((structureData.citations as Array<{ title: string; journal?: string; year?: string | null; pmid?: string | null; doi?: string | null; pubmedUrl?: string | null; doiUrl?: string | null }> | undefined) ?? []).length > 0 && (
+                    <div>
+                      <p className="text-muted-foreground uppercase mb-1">Primary Citations</p>
+                      <div className="space-y-1.5">
+                        {(structureData.citations as Array<{ title: string; journal?: string; year?: string | null; pmid?: string | null; doi?: string | null; pubmedUrl?: string | null; doiUrl?: string | null }>).map((c, i) => (
+                          <div key={i} className="border-b border-border py-1">
+                            <p className="text-white/80 leading-snug">{c.title || "Untitled"}</p>
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                              {c.journal && <span className="text-muted-foreground">{c.journal}{c.year ? ` (${c.year})` : ""}</span>}
+                              {c.pubmedUrl && (
+                                <a href={c.pubmedUrl} target="_blank" rel="noreferrer" className="text-white/70 hover:text-white flex items-center gap-0.5">
+                                  PubMed:{c.pmid} <ExternalLink className="h-2.5 w-2.5" />
+                                </a>
+                              )}
+                              {c.doiUrl && (
+                                <a href={c.doiUrl} target="_blank" rel="noreferrer" className="text-white/70 hover:text-white flex items-center gap-0.5">
+                                  DOI <ExternalLink className="h-2.5 w-2.5" />
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -209,13 +277,29 @@ export default function Protein() {
               <Skeleton className="h-64 rounded-none" />
             ) : annotationData ? (
               <Card className="rounded-none border-border bg-card">
-                <CardHeader><CardTitle className="text-sm uppercase">UniProt Annotations</CardTitle></CardHeader>
+                <CardHeader>
+                  <CardTitle className="text-sm uppercase flex items-center gap-3">
+                    <span>UniProt Annotations</span>
+                    {annotationData.uniprotId && (
+                      <a
+                        href={annotationData.uniprotUrl ?? `https://www.uniprot.org/uniprotkb/${annotationData.uniprotId}/entry`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-mono text-muted-foreground hover:text-white flex items-center gap-0.5"
+                      >
+                        {annotationData.uniprotId} <ExternalLink className="h-2.5 w-2.5" />
+                      </a>
+                    )}
+                  </CardTitle>
+                </CardHeader>
                 <CardContent className="font-mono text-xs space-y-3">
-                  {annotationData.uniprotId && (
+                  {annotationData.gene && (
                     <div className="flex gap-2 items-center">
-                      <span className="text-muted-foreground">UniProt</span>
-                      <Badge className="rounded-none bg-white text-black text-xs">{annotationData.uniprotId}</Badge>
-                      {annotationData.gene && <Badge className="rounded-none bg-white/20 text-white text-xs">{annotationData.gene}</Badge>}
+                      <span className="text-muted-foreground">Gene</span>
+                      <Badge className="rounded-none bg-white/20 text-white text-xs">{annotationData.gene}</Badge>
+                      {annotationData.sequenceLength && (
+                        <span className="text-muted-foreground">{annotationData.sequenceLength} aa</span>
+                      )}
                     </div>
                   )}
                   {annotationData.function && (
@@ -263,20 +347,62 @@ export default function Protein() {
                 </CardContent>
               </Card>
             ) : null}
+
+            {/* Related structures from the same sequence cluster */}
+            {selectedPdbId && (
+              <Card className="rounded-none border-border bg-card">
+                <CardHeader>
+                  <CardTitle className="text-sm uppercase flex items-center justify-between flex-wrap gap-2">
+                    <span>Related Structures — Same Sequence Cluster</span>
+                    {relatedData?.clusterId && (
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        cluster {relatedData.clusterId} ({relatedData.similarityCutoff ?? 100}% identity)
+                      </span>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {relatedLoading ? (
+                    <Skeleton className="h-48 rounded-none" />
+                  ) : (relatedData?.related ?? []).length === 0 ? (
+                    <p className="text-xs text-muted-foreground font-mono uppercase py-4 text-center">No cluster members found</p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                      {(relatedData?.related ?? []).slice(0, 6).map((p) => (
+                        <button
+                          key={p.pdbId}
+                          onClick={() => setSelectedPdbId(p.pdbId)}
+                          className="text-left border border-border hover:bg-white/5 transition-colors"
+                          title={p.title}
+                        >
+                          <div className="h-32 bg-black">
+                            <ProteinViewer cifUrl={p.pdbId ? `https://files.rcsb.org/download/${p.pdbId.toUpperCase()}.cif` : ""} pdbId={p.pdbId} />
+                          </div>
+                          <div className="p-2">
+                            <p className="font-bold font-mono text-xs">{p.pdbId}</p>
+                            <p className="text-[10px] text-muted-foreground line-clamp-1">{p.title}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       )}
 
       <div>
         <h2 className="text-sm font-bold uppercase text-muted-foreground mb-3">
-          {searchTerm ? `Search Results for "${searchTerm}"` : "Featured Structures"}
+          {searchTerm ? `Search Results for "${searchTerm}"` : "Latest Deposited Structures — live from RCSB"}
         </h2>
         {isLoadingList ? (
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
             {Array.from({ length: 10 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-none" />)}
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
             {(displayedProteins).map((p) => (
               <button
                 key={p.pdbId}
@@ -298,6 +424,12 @@ export default function Protein() {
           </div>
         )}
       </div>
+
+      {ligandCounts.length > 0 && (
+        <ChartCard title="Ligand & Feature Counts" subtitle="current entry">
+          <CountBarChart data={ligandCounts} layout="horizontal" />
+        </ChartCard>
+      )}
     </div>
   );
 }

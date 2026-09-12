@@ -61,11 +61,11 @@ export const UploadVcfBody = zod.object({
 
 export const UploadVcfResponse = zod.object({
   id: zod.string(),
-  status: zod.enum(["pending", "processing", "completed", "failed"]),
   filename: zod.string(),
-  variantCount: zod.number().optional(),
-  createdAt: zod.string(),
-  completedAt: zod.string().optional(),
+  status: zod.string(),
+  variantCount: zod.number(),
+  annotatedCount: zod.number().optional(),
+  createdAt: zod.string().optional(),
 });
 
 /**
@@ -95,6 +95,42 @@ export const AnnotateVariantResponse = zod.object({
   ensemblAnnotation: zod.record(zod.string(), zod.unknown()).optional(),
   clinvarAnnotation: zod.record(zod.string(), zod.unknown()).optional(),
   dbsnpAnnotation: zod.record(zod.string(), zod.unknown()).optional(),
+  externalUrls: zod.record(zod.string(), zod.string()).optional(),
+});
+
+/**
+ * @summary Real reference bases around a variant (Ensembl GRCh38) for 3D helix view
+ */
+export const GetVariantSequenceContextParams = zod.object({
+  variantId: zod.coerce.string(),
+});
+
+export const getVariantSequenceContextQueryFlankDefault = 20;
+
+export const GetVariantSequenceContextQueryParams = zod.object({
+  flank: zod.coerce
+    .number()
+    .default(getVariantSequenceContextQueryFlankDefault),
+});
+
+export const GetVariantSequenceContextResponse = zod.object({
+  variant: zod.object({
+    id: zod.string().optional(),
+    chromosome: zod.string().optional(),
+    position: zod.number().optional(),
+    ref: zod.string().optional(),
+    alt: zod.string().optional(),
+    rsId: zod.string().optional(),
+    gene: zod.string().optional(),
+    consequence: zod.string().optional(),
+    significance: zod.string().optional(),
+  }),
+  sequence: zod.string(),
+  leftFlank: zod.string(),
+  refAllele: zod.string(),
+  rightFlank: zod.string(),
+  flank: zod.number(),
+  source: zod.string().optional(),
 });
 
 /**
@@ -125,6 +161,30 @@ export const GetGenomicsStatsResponse = zod.object({
     }),
   ),
   recentJobs: zod.number(),
+  topGenes: zod
+    .array(
+      zod.object({
+        gene: zod.string(),
+        count: zod.number(),
+      }),
+    )
+    .optional(),
+  qualityHistogram: zod
+    .array(
+      zod.object({
+        bucket: zod.string(),
+        count: zod.number(),
+      }),
+    )
+    .optional(),
+  alleleFrequencyHistogram: zod
+    .array(
+      zod.object({
+        bucket: zod.string(),
+        count: zod.number(),
+      }),
+    )
+    .optional(),
 });
 
 /**
@@ -134,7 +194,7 @@ export const ListGenomicsJobsResponse = zod.object({
   jobs: zod.array(
     zod.object({
       id: zod.string(),
-      status: zod.enum(["pending", "processing", "completed", "failed"]),
+      status: zod.string(),
       filename: zod.string(),
       variantCount: zod.number().optional(),
       createdAt: zod.string(),
@@ -162,11 +222,27 @@ export const SearchProteinsResponse = zod.object({
       resolution: zod.number().optional(),
       method: zod.string().optional(),
       depositionDate: zod.string().optional(),
+      releaseDate: zod.string().optional(),
+      citationCount: zod.number().optional(),
+      citations: zod
+        .array(
+          zod.object({
+            title: zod.string().optional(),
+            journal: zod.string().optional(),
+            year: zod.string().optional(),
+            pmid: zod.string().optional(),
+            doi: zod.string().optional(),
+            pubmedUrl: zod.string().optional(),
+            doiUrl: zod.string().optional(),
+          }),
+        )
+        .optional(),
       chains: zod.number().optional(),
       atoms: zod.number().optional(),
       ligands: zod.array(zod.string()).optional(),
       uniprotId: zod.string().optional(),
       gene: zod.string().optional(),
+      pdbUrl: zod.string().optional(),
     }),
   ),
   total: zod.number(),
@@ -208,9 +284,27 @@ export const GetProteinStructureResponse = zod.object({
         siteId: zod.string(),
         residues: zod.array(zod.string()),
         ligand: zod.string().optional(),
+        details: zod.string().optional(),
       }),
     )
     .optional(),
+  uniprotId: zod.string().optional(),
+  citations: zod
+    .array(
+      zod.object({
+        title: zod.string().optional(),
+        journal: zod.string().optional(),
+        year: zod.string().optional(),
+        pmid: zod.string().optional(),
+        doi: zod.string().optional(),
+        pubmedUrl: zod.string().optional(),
+        doiUrl: zod.string().optional(),
+      }),
+    )
+    .optional(),
+  citationCount: zod.number().optional(),
+  rcsbUrl: zod.string().optional(),
+  pdbeUrl: zod.string().optional(),
 });
 
 /**
@@ -227,6 +321,17 @@ export const GetProteinAnnotationsResponse = zod.object({
   gene: zod.string().optional(),
   organism: zod.string().optional(),
   subcellularLocation: zod.array(zod.string()).optional(),
+  sequenceLength: zod.number().optional(),
+  featureCounts: zod
+    .array(
+      zod.object({
+        type: zod.string(),
+        count: zod.number(),
+      }),
+    )
+    .optional(),
+  uniprotUrl: zod.string().optional(),
+  pdbeUrl: zod.string().optional(),
   goTerms: zod
     .array(
       zod.object({
@@ -259,11 +364,27 @@ export const GetFeaturedProteinsResponse = zod.object({
       resolution: zod.number().optional(),
       method: zod.string().optional(),
       depositionDate: zod.string().optional(),
+      releaseDate: zod.string().optional(),
+      citationCount: zod.number().optional(),
+      citations: zod
+        .array(
+          zod.object({
+            title: zod.string().optional(),
+            journal: zod.string().optional(),
+            year: zod.string().optional(),
+            pmid: zod.string().optional(),
+            doi: zod.string().optional(),
+            pubmedUrl: zod.string().optional(),
+            doiUrl: zod.string().optional(),
+          }),
+        )
+        .optional(),
       chains: zod.number().optional(),
       atoms: zod.number().optional(),
       ligands: zod.array(zod.string()).optional(),
       uniprotId: zod.string().optional(),
       gene: zod.string().optional(),
+      pdbUrl: zod.string().optional(),
     }),
   ),
   total: zod.number(),
@@ -289,6 +410,7 @@ export const DesignGuideRnasBody = zod.object({
 export const DesignGuideRnasResponse = zod.object({
   jobId: zod.string(),
   geneName: zod.string().optional(),
+  species: zod.string().optional(),
   totalCandidates: zod.number(),
   guides: zod.array(
     zod.object({
@@ -296,7 +418,7 @@ export const DesignGuideRnasResponse = zod.object({
       sequence: zod.string(),
       pamSequence: zod.string(),
       position: zod.number(),
-      strand: zod.enum(["+", "-"]),
+      strand: zod.string(),
       score: zod.number(),
       gcContent: zod.number().optional(),
       offTargetScore: zod.number().optional(),
@@ -324,10 +446,13 @@ export const GetGeneSequenceQueryParams = zod.object({
 export const GetGeneSequenceResponse = zod.object({
   geneName: zod.string(),
   ensemblId: zod.string().optional(),
+  species: zod.string().optional(),
   chromosome: zod.string().optional(),
   start: zod.number().optional(),
   end: zod.number().optional(),
   strand: zod.number().optional(),
+  biotype: zod.string().optional(),
+  description: zod.string().optional(),
   sequence: zod.string(),
   length: zod.number(),
 });
@@ -341,6 +466,8 @@ export const ListCrisprJobsResponse = zod.object({
       id: zod.string(),
       geneName: zod.string().optional(),
       status: zod.string(),
+      pamType: zod.string().optional(),
+      sequenceLength: zod.number().optional(),
       guidesCount: zod.number().optional(),
       createdAt: zod.string(),
     }),
@@ -360,15 +487,7 @@ export const ExtractBiomedicalEntitiesResponse = zod.object({
     zod.object({
       id: zod.string(),
       text: zod.string(),
-      type: zod.enum([
-        "gene",
-        "disease",
-        "drug",
-        "protein",
-        "organism",
-        "mutation",
-        "pathway",
-      ]),
+      type: zod.string(),
       normalizedId: zod.string().optional(),
       confidence: zod.number(),
       startOffset: zod.number().optional(),
@@ -386,6 +505,10 @@ export const ExtractBiomedicalEntitiesResponse = zod.object({
   ),
   text: zod.string(),
   entityCounts: zod.record(zod.string(), zod.number()).optional(),
+  source: zod.string().optional(),
+  pmid: zod.string().optional(),
+  pubmedUrl: zod.string().optional(),
+  note: zod.string().optional(),
 });
 
 /**
@@ -409,6 +532,9 @@ export const SearchPubmedPapersResponse = zod.object({
       year: zod.number().optional(),
       doi: zod.string().optional(),
       keywords: zod.array(zod.string()).optional(),
+      citationCount: zod.number().optional(),
+      pubmedUrl: zod.string().optional(),
+      doiUrl: zod.string().optional(),
     }),
   ),
   total: zod.number(),
@@ -440,6 +566,14 @@ export const GetKnowledgeGraphResponse = zod.object({
     }),
   ),
   totalDocuments: zod.number(),
+  entityTypeCounts: zod
+    .array(
+      zod.object({
+        type: zod.string(),
+        count: zod.number(),
+      }),
+    )
+    .optional(),
 });
 
 /**
@@ -464,9 +598,13 @@ export const SearchGenomicRegionResponse = zod.object({
       strand: zod.number().optional(),
       biotype: zod.string().optional(),
       description: zod.string().optional(),
+      organism: zod.string().optional(),
+      ncbiGeneUrl: zod.string().optional(),
+      ensemblUrl: zod.string().optional(),
     }),
   ),
   total: zod.number(),
+  species: zod.string().optional(),
 });
 
 /**
@@ -485,6 +623,7 @@ export const GetGenomicRegionResponse = zod.object({
   chromosome: zod.string(),
   start: zod.number(),
   end: zod.number(),
+  species: zod.string().optional(),
   genes: zod.array(
     zod.object({
       id: zod.string(),
@@ -496,6 +635,9 @@ export const GetGenomicRegionResponse = zod.object({
       strand: zod.number().optional(),
       biotype: zod.string().optional(),
       description: zod.string().optional(),
+      organism: zod.string().optional(),
+      ncbiGeneUrl: zod.string().optional(),
+      ensemblUrl: zod.string().optional(),
     }),
   ),
   variants: zod.array(
@@ -505,6 +647,8 @@ export const GetGenomicRegionResponse = zod.object({
       ref: zod.string(),
       alt: zod.string(),
       consequence: zod.string().optional(),
+      mostSevere: zod.string().optional(),
+      dbsnpUrl: zod.string().optional(),
     }),
   ),
   coverageData: zod
@@ -512,6 +656,16 @@ export const GetGenomicRegionResponse = zod.object({
       zod.object({
         position: zod.number(),
         coverage: zod.number(),
+      }),
+    )
+    .optional(),
+  gcContent: zod.number().optional(),
+  sequenceLength: zod.number().optional(),
+  consequenceCounts: zod
+    .array(
+      zod.object({
+        consequence: zod.string(),
+        count: zod.number(),
       }),
     )
     .optional(),
@@ -536,11 +690,14 @@ export const ListGenomeTracksResponse = zod.object({
  * @summary List all biological samples
  */
 export const listSamplesQueryLimitDefault = 50;
+export const listSamplesQueryOffsetDefault = 0;
 
 export const ListSamplesQueryParams = zod.object({
   type: zod.coerce.string().optional(),
   status: zod.coerce.string().optional(),
   limit: zod.coerce.number().default(listSamplesQueryLimitDefault),
+  offset: zod.coerce.number().default(listSamplesQueryOffsetDefault),
+  q: zod.coerce.string().optional(),
 });
 
 export const ListSamplesResponse = zod.object({
@@ -548,16 +705,8 @@ export const ListSamplesResponse = zod.object({
     zod.object({
       id: zod.string(),
       name: zod.string(),
-      type: zod.enum([
-        "dna",
-        "rna",
-        "protein",
-        "tissue",
-        "cell_line",
-        "blood",
-        "other",
-      ]),
-      status: zod.enum(["active", "depleted", "archived", "quarantine"]),
+      type: zod.string(),
+      status: zod.string(),
       concentration: zod.number().optional(),
       unit: zod.string().optional(),
       volume: zod.number().optional(),
@@ -578,15 +727,7 @@ export const ListSamplesResponse = zod.object({
  */
 export const CreateSampleBody = zod.object({
   name: zod.string(),
-  type: zod.enum([
-    "dna",
-    "rna",
-    "protein",
-    "tissue",
-    "cell_line",
-    "blood",
-    "other",
-  ]),
+  type: zod.string(),
   concentration: zod.number().optional(),
   unit: zod.string().optional(),
   volume: zod.number().optional(),
@@ -606,16 +747,8 @@ export const GetSampleParams = zod.object({
 export const GetSampleResponse = zod.object({
   id: zod.string(),
   name: zod.string(),
-  type: zod.enum([
-    "dna",
-    "rna",
-    "protein",
-    "tissue",
-    "cell_line",
-    "blood",
-    "other",
-  ]),
-  status: zod.enum(["active", "depleted", "archived", "quarantine"]),
+  type: zod.string(),
+  status: zod.string(),
   concentration: zod.number().optional(),
   unit: zod.string().optional(),
   volume: zod.number().optional(),
@@ -637,7 +770,7 @@ export const UpdateSampleParams = zod.object({
 
 export const UpdateSampleBody = zod.object({
   name: zod.string().optional(),
-  status: zod.enum(["active", "depleted", "archived", "quarantine"]).optional(),
+  status: zod.string().optional(),
   concentration: zod.number().optional(),
   volume: zod.number().optional(),
   storageLocation: zod.string().optional(),
@@ -647,16 +780,8 @@ export const UpdateSampleBody = zod.object({
 export const UpdateSampleResponse = zod.object({
   id: zod.string(),
   name: zod.string(),
-  type: zod.enum([
-    "dna",
-    "rna",
-    "protein",
-    "tissue",
-    "cell_line",
-    "blood",
-    "other",
-  ]),
-  status: zod.enum(["active", "depleted", "archived", "quarantine"]),
+  type: zod.string(),
+  status: zod.string(),
   concentration: zod.number().optional(),
   unit: zod.string().optional(),
   volume: zod.number().optional(),
@@ -680,10 +805,14 @@ export const DeleteSampleParams = zod.object({
  * @summary List all experiments
  */
 export const listExperimentsQueryLimitDefault = 50;
+export const listExperimentsQueryOffsetDefault = 0;
 
 export const ListExperimentsQueryParams = zod.object({
   status: zod.coerce.string().optional(),
+  type: zod.coerce.string().optional(),
   limit: zod.coerce.number().default(listExperimentsQueryLimitDefault),
+  offset: zod.coerce.number().default(listExperimentsQueryOffsetDefault),
+  q: zod.coerce.string().optional(),
 });
 
 export const ListExperimentsResponse = zod.object({
@@ -691,22 +820,8 @@ export const ListExperimentsResponse = zod.object({
     zod.object({
       id: zod.string(),
       name: zod.string(),
-      type: zod.enum([
-        "pcr",
-        "sequencing",
-        "western_blot",
-        "elisa",
-        "flow_cytometry",
-        "microscopy",
-        "other",
-      ]),
-      status: zod.enum([
-        "planned",
-        "running",
-        "completed",
-        "failed",
-        "cancelled",
-      ]),
+      type: zod.string(),
+      status: zod.string(),
       sampleIds: zod.array(zod.string()).optional(),
       protocol: zod.string().optional(),
       notes: zod.string().optional(),
@@ -724,15 +839,7 @@ export const ListExperimentsResponse = zod.object({
  */
 export const CreateExperimentBody = zod.object({
   name: zod.string(),
-  type: zod.enum([
-    "pcr",
-    "sequencing",
-    "western_blot",
-    "elisa",
-    "flow_cytometry",
-    "microscopy",
-    "other",
-  ]),
+  type: zod.string(),
   sampleIds: zod.array(zod.string()).optional(),
   protocol: zod.string().optional(),
   notes: zod.string().optional(),
@@ -748,16 +855,8 @@ export const GetExperimentParams = zod.object({
 export const GetExperimentResponse = zod.object({
   id: zod.string(),
   name: zod.string(),
-  type: zod.enum([
-    "pcr",
-    "sequencing",
-    "western_blot",
-    "elisa",
-    "flow_cytometry",
-    "microscopy",
-    "other",
-  ]),
-  status: zod.enum(["planned", "running", "completed", "failed", "cancelled"]),
+  type: zod.string(),
+  status: zod.string(),
   sampleIds: zod.array(zod.string()).optional(),
   protocol: zod.string().optional(),
   notes: zod.string().optional(),
@@ -776,9 +875,7 @@ export const UpdateExperimentParams = zod.object({
 
 export const UpdateExperimentBody = zod.object({
   name: zod.string().optional(),
-  status: zod
-    .enum(["planned", "running", "completed", "failed", "cancelled"])
-    .optional(),
+  status: zod.string().optional(),
   protocol: zod.string().optional(),
   notes: zod.string().optional(),
   completedAt: zod.string().optional(),
@@ -787,16 +884,8 @@ export const UpdateExperimentBody = zod.object({
 export const UpdateExperimentResponse = zod.object({
   id: zod.string(),
   name: zod.string(),
-  type: zod.enum([
-    "pcr",
-    "sequencing",
-    "western_blot",
-    "elisa",
-    "flow_cytometry",
-    "microscopy",
-    "other",
-  ]),
-  status: zod.enum(["planned", "running", "completed", "failed", "cancelled"]),
+  type: zod.string(),
+  status: zod.string(),
   sampleIds: zod.array(zod.string()).optional(),
   protocol: zod.string().optional(),
   notes: zod.string().optional(),
@@ -816,16 +905,56 @@ export const GetLimsStatsResponse = zod.object({
   runningExperiments: zod.number(),
   samplesByType: zod.array(
     zod.object({
-      type: zod.string(),
+      key: zod.string(),
       count: zod.number(),
     }),
   ),
+  samplesByStatus: zod
+    .array(
+      zod.object({
+        key: zod.string(),
+        count: zod.number(),
+      }),
+    )
+    .optional(),
   experimentsByStatus: zod.array(
     zod.object({
       status: zod.string(),
       count: zod.number(),
     }),
   ),
+  experimentsByType: zod
+    .array(
+      zod.object({
+        key: zod.string(),
+        count: zod.number(),
+      }),
+    )
+    .optional(),
+  concentrationHistogram: zod
+    .array(
+      zod.object({
+        bucket: zod.string(),
+        count: zod.number(),
+      }),
+    )
+    .optional(),
+  volumeHistogram: zod
+    .array(
+      zod.object({
+        bucket: zod.string(),
+        count: zod.number(),
+      }),
+    )
+    .optional(),
+  creationTimeline: zod
+    .array(
+      zod.object({
+        month: zod.string(),
+        count: zod.number(),
+      }),
+    )
+    .optional(),
   recentActivity: zod.array(
     zod.object({
       action: zod.string(),
@@ -862,9 +991,25 @@ export const SearchCompoundsResponse = zod.object({
       rotatableBonds: zod.number().optional(),
       aromaticRings: zod.number().optional(),
       qedScore: zod.number().optional(),
+      ro5Violations: zod.number().optional(),
+      psa: zod.number().optional(),
       maxPhase: zod.number().optional(),
       indication: zod.string().optional(),
       atcClass: zod.string().optional(),
+      atcClasses: zod.array(zod.string()).optional(),
+      firstApproval: zod.number().optional(),
+      moleculeType: zod.string().optional(),
+      chemblUrl: zod.string().optional(),
+      pubchemUrl: zod.string().optional(),
+      indications: zod
+        .array(
+          zod.object({
+            term: zod.string(),
+            maxPhase: zod.number().optional(),
+          }),
+        )
+        .optional(),
+      totalIndications: zod.number().optional(),
     }),
   ),
   total: zod.number(),
@@ -892,9 +1037,25 @@ export const GetCompoundResponse = zod.object({
   rotatableBonds: zod.number().optional(),
   aromaticRings: zod.number().optional(),
   qedScore: zod.number().optional(),
+  ro5Violations: zod.number().optional(),
+  psa: zod.number().optional(),
   maxPhase: zod.number().optional(),
   indication: zod.string().optional(),
   atcClass: zod.string().optional(),
+  atcClasses: zod.array(zod.string()).optional(),
+  firstApproval: zod.number().optional(),
+  moleculeType: zod.string().optional(),
+  chemblUrl: zod.string().optional(),
+  pubchemUrl: zod.string().optional(),
+  indications: zod
+    .array(
+      zod.object({
+        term: zod.string(),
+        maxPhase: zod.number().optional(),
+      }),
+    )
+    .optional(),
+  totalIndications: zod.number().optional(),
 });
 
 /**
@@ -922,10 +1083,22 @@ export const GetCompoundActivitiesResponse = zod.object({
       standardUnits: zod.string().optional(),
       relation: zod.string().optional(),
       assayType: zod.string().optional(),
+      assayDescription: zod.string().optional(),
       pchembl: zod.number().optional(),
+      activityComment: zod.string().optional(),
+      documentYear: zod.number().optional(),
+      targetChemblUrl: zod.string().optional(),
     }),
   ),
   total: zod.number(),
+  topTargets: zod
+    .array(
+      zod.object({
+        target: zod.string(),
+        count: zod.number(),
+      }),
+    )
+    .optional(),
 });
 
 /**
@@ -947,6 +1120,8 @@ export const SearchTargetsResponse = zod.object({
       organism: zod.string().optional(),
       geneNames: zod.array(zod.string()).optional(),
       uniprotId: zod.string().optional(),
+      chemblUrl: zod.string().optional(),
+      uniprotUrl: zod.string().optional(),
     }),
   ),
   total: zod.number(),
@@ -956,16 +1131,19 @@ export const SearchTargetsResponse = zod.object({
  * @summary Drug discovery dashboard statistics
  */
 export const GetDrugDashboardStatsResponse = zod.object({
-  totalCompoundsSearched: zod.number(),
   approvedDrugs: zod.number(),
   uniqueTargets: zod.number(),
-  recentSearches: zod.array(
-    zod.object({
-      query: zod.string(),
-      timestamp: zod.string(),
-      results: zod.number(),
-    }),
-  ),
+  totalIndications: zod.number().optional(),
+  phase4Indications: zod.number().optional(),
+  recentSearches: zod
+    .array(
+      zod.object({
+        query: zod.string(),
+        timestamp: zod.string(),
+        results: zod.number(),
+      }),
+    )
+    .optional(),
   topIndications: zod.array(
     zod.object({
       indication: zod.string(),
@@ -984,18 +1162,36 @@ export const SearchGeneExpressionQueryParams = zod.object({
 
 export const SearchGeneExpressionResponse = zod.object({
   gene: zod.string(),
+  geneId: zod.string().optional(),
+  chromosome: zod.string().optional(),
+  start: zod.number().optional(),
+  end: zod.number().optional(),
+  description: zod.string().optional(),
   expressions: zod.array(
     zod.object({
       geneId: zod.string(),
       geneName: zod.string(),
       tissue: zod.string(),
+      tissueName: zod.string().optional(),
+      ontologyId: zod.string().optional(),
       tpm: zod.number(),
       median: zod.number().optional(),
       unit: zod.string().optional(),
+      gtexUrl: zod.string().optional(),
     }),
   ),
   tissues: zod.array(zod.string()),
   maxTpm: zod.number().optional(),
+  medianExpressionHistogram: zod
+    .array(
+      zod.object({
+        bucket: zod.string(),
+        count: zod.number(),
+      }),
+    )
+    .optional(),
+  gtexUrl: zod.string().optional(),
+  ensemblUrl: zod.string().optional(),
 });
 
 /**
@@ -1006,15 +1202,10 @@ export const ListTranscriptomicsJobsResponse = zod.object({
     zod.object({
       id: zod.string(),
       name: zod.string(),
-      status: zod.enum([
-        "pending",
-        "aligning",
-        "quantifying",
-        "analyzing",
-        "completed",
-        "failed",
-      ]),
+      status: zod.string(),
       sampleType: zod.string().optional(),
+      referenceGenome: zod.string().optional(),
+      pairedEnd: zod.string().optional(),
       readsCount: zod.number().optional(),
       genesDetected: zod.number().optional(),
       createdAt: zod.string(),
@@ -1046,6 +1237,224 @@ export const ListTissuesResponse = zod.object({
       id: zod.string(),
       name: zod.string(),
       sampleCount: zod.number().optional(),
+      colorHex: zod.string().optional(),
+      expressedGeneCount: zod.number().optional(),
+      eGeneCount: zod.number().optional(),
     }),
   ),
+});
+
+/**
+ * @summary BM25 natural-language search across all datasets with field:value filters
+ */
+export const globalSearchQueryLimitDefault = 20;
+export const globalSearchQueryOffsetDefault = 0;
+
+export const GlobalSearchQueryParams = zod.object({
+  q: zod.coerce.string(),
+  collections: zod.coerce
+    .string()
+    .optional()
+    .describe("Comma-separated collection names to scope the search"),
+  limit: zod.coerce.number().default(globalSearchQueryLimitDefault),
+  offset: zod.coerce.number().default(globalSearchQueryOffsetDefault),
+});
+
+export const GlobalSearchResponse = zod.object({
+  query: zod.string(),
+  total: zod.number(),
+  results: zod.array(
+    zod.object({
+      id: zod.string(),
+      collection: zod.string(),
+      rowId: zod.string(),
+      score: zod.number(),
+      snippet: zod.string().optional(),
+      fields: zod.record(zod.string(), zod.unknown()),
+      links: zod.record(zod.string(), zod.string()).optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary List collections, counts, and searchable fields
+ */
+export const GetSearchSchemaResponse = zod.object({
+  collections: zod.array(
+    zod.object({
+      collection: zod.string(),
+      count: zod.number(),
+      searchableFields: zod.array(zod.string()),
+      metadataFields: zod.array(zod.string()).optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Facet counts for a field, optionally scoped by collection or query
+ */
+export const getSearchFacetsQueryLimitDefault = 25;
+
+export const GetSearchFacetsQueryParams = zod.object({
+  field: zod.coerce.string(),
+  collections: zod.coerce.string().optional(),
+  q: zod.coerce.string().optional(),
+  limit: zod.coerce.number().default(getSearchFacetsQueryLimitDefault),
+});
+
+export const GetSearchFacetsResponse = zod.object({
+  field: zod.string(),
+  facets: zod.array(
+    zod.object({
+      key: zod.string(),
+      count: zod.number(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Cross-dataset overview with chart data for the dashboard
+ */
+export const GetStatsOverviewResponse = zod.object({
+  datasets: zod.record(zod.string(), zod.number()),
+  totalRecords: zod.number(),
+  moduleStats: zod.record(zod.string(), zod.unknown()),
+  charts: zod.object({
+    variantSignificance: zod.array(
+      zod.object({
+        key: zod.string(),
+        count: zod.number(),
+      }),
+    ),
+    entityTypeBreakdown: zod.array(
+      zod.object({
+        key: zod.string(),
+        count: zod.number(),
+      }),
+    ),
+    experimentStatus: zod.array(
+      zod.object({
+        key: zod.string(),
+        count: zod.number(),
+      }),
+    ),
+    sampleTypes: zod.array(
+      zod.object({
+        key: zod.string(),
+        count: zod.number(),
+      }),
+    ),
+    variantActivity: zod.array(
+      zod.object({
+        date: zod.string(),
+        count: zod.number(),
+      }),
+    ),
+  }),
+});
+
+/**
+ * @summary List all Ensembl species available for CRISPR design
+ */
+export const ListCrisprSpeciesResponse = zod.object({
+  species: zod.array(
+    zod.object({
+      name: zod.string(),
+      displayName: zod.string().optional(),
+      commonName: zod.string().optional(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary List all Ensembl species available in the genome browser
+ */
+export const ListGenomeSpeciesResponse = zod.object({
+  species: zod.array(
+    zod.object({
+      name: zod.string(),
+      displayName: zod.string().optional(),
+      commonName: zod.string().optional(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Structures in the same RCSB sequence-identity cluster
+ */
+export const GetRelatedProteinsParams = zod.object({
+  pdbId: zod.coerce.string(),
+});
+
+export const GetRelatedProteinsResponse = zod.object({
+  pdbId: zod.string(),
+  clusterId: zod.string().optional(),
+  similarityCutoff: zod.number().optional(),
+  related: zod.array(
+    zod.object({
+      pdbId: zod.string(),
+      title: zod.string(),
+      organism: zod.string().optional(),
+      resolution: zod.number().optional(),
+      method: zod.string().optional(),
+      depositionDate: zod.string().optional(),
+      releaseDate: zod.string().optional(),
+      citationCount: zod.number().optional(),
+      citations: zod
+        .array(
+          zod.object({
+            title: zod.string().optional(),
+            journal: zod.string().optional(),
+            year: zod.string().optional(),
+            pmid: zod.string().optional(),
+            doi: zod.string().optional(),
+            pubmedUrl: zod.string().optional(),
+            doiUrl: zod.string().optional(),
+          }),
+        )
+        .optional(),
+      chains: zod.number().optional(),
+      atoms: zod.number().optional(),
+      ligands: zod.array(zod.string()).optional(),
+      uniprotId: zod.string().optional(),
+      gene: zod.string().optional(),
+      pdbUrl: zod.string().optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Real 3D conformer (PubChem computed geometry) parsed to atoms + bonds
+ */
+export const GetCompoundConformer3dParams = zod.object({
+  chemblId: zod.coerce.string(),
+});
+
+export const GetCompoundConformer3dResponse = zod.object({
+  chemblId: zod.string(),
+  cid: zod.string(),
+  name: zod.string().optional(),
+  atoms: zod.array(
+    zod.object({
+      x: zod.number(),
+      y: zod.number(),
+      z: zod.number(),
+      element: zod.string(),
+    }),
+  ),
+  bonds: zod.array(
+    zod.object({
+      a: zod.number(),
+      b: zod.number(),
+      order: zod.number(),
+    }),
+  ),
+  atomCount: zod.number().optional(),
+  bondCount: zod.number().optional(),
+  pubchemUrl: zod.string().optional(),
+  molecularFormula: zod.string().optional(),
+  molecularWeight: zod.string().optional(),
 });

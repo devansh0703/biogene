@@ -1,15 +1,18 @@
 import { useState, useMemo, useEffect, Component, type ReactNode } from "react";
 import {
-  useExtractBiomedicalEntities, useSearchPubmedPapers, useGetKnowledgeGraph,
+  useExtractBiomedicalEntities, getSearchPubmedPapersQueryOptions, getGetKnowledgeGraphQueryOptions,
 } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { ChartCard, CountPieChart, TimelineChart, type Count } from "@/components/charts";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
+import { ExternalLink } from "lucide-react";
 
 function supportsWebGL(): boolean {
   try {
@@ -139,6 +142,16 @@ interface ExtractResult {
   entityCounts?: Record<string, number>;
 }
 
+interface PaperRow {
+  pmid: string;
+  title: string;
+  year?: string;
+  authors?: string[];
+  journal?: string;
+  pubmedUrl?: string;
+  doiUrl?: string;
+}
+
 const DEFAULT_PMID = "33845124";
 const DEFAULT_PAPER_QUERY = "BRCA1 cancer therapy";
 
@@ -151,11 +164,13 @@ export default function Nlp() {
   const [autoExtracted, setAutoExtracted] = useState(false);
 
   const extractMutation = useExtractBiomedicalEntities();
-  const { data: papersData, isLoading: papersLoading } = useSearchPubmedPapers(
-    { query: paperSearchTerm },
-    { query: { enabled: !!paperSearchTerm } }
+  const { data: papersData, isLoading: papersLoading } = useQuery(
+    getSearchPubmedPapersQueryOptions(
+      { query: paperSearchTerm },
+      { query: { enabled: !!paperSearchTerm, queryKey: ["pubmed-papers", paperSearchTerm] } },
+    ),
   );
-  const { data: graphData, isLoading: graphLoading } = useGetKnowledgeGraph({});
+  const { data: graphData, isLoading: graphLoading } = useQuery(getGetKnowledgeGraphQueryOptions({}));
 
   useEffect(() => {
     if (autoExtracted) return;
@@ -164,6 +179,7 @@ export default function Nlp() {
       { data: { pmid: DEFAULT_PMID } },
       { onSuccess: (data) => setExtractResult(data as ExtractResult) }
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleExtract = () => {
@@ -173,21 +189,46 @@ export default function Nlp() {
     );
   };
 
+  const papers = (papersData?.papers ?? []) as unknown as PaperRow[];
+
   const entityTypes = useMemo(() => {
-    if (!extractResult) return [];
+    if (!extractResult) return [] as Count[];
     const counts: Record<string, number> = {};
     for (const e of extractResult.entities) {
       counts[e.type] = (counts[e.type] ?? 0) + 1;
     }
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    return Object.entries(counts).map(([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count);
   }, [extractResult]);
+
+  const topEntities: Count[] = useMemo(() => {
+    if (!extractResult) return [];
+    const counts: Record<string, number> = {};
+    for (const e of extractResult.entities) {
+      counts[e.text] = (counts[e.text] ?? 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([key, count]) => ({ key, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [extractResult]);
+
+  const paperYears = useMemo(() => {
+    const byYear = new Map<string, number>();
+    for (const p of papers) {
+      if (!p.year) continue;
+      byYear.set(p.year, (byYear.get(p.year) ?? 0) + 1);
+    }
+    return [...byYear.entries()].sort().map(([date, count]) => ({ date, count }));
+  }, [papers]);
+
+  const pubmedUrlFor = (p: PaperRow) => p.pubmedUrl ?? `https://pubmed.ncbi.nlm.nih.gov/${p.pmid}/`;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold uppercase tracking-tight">Biomedical NLP</h1>
         <p className="text-muted-foreground font-mono mt-1 text-sm">
-          PubTator3 entity extraction + relation mining + 3D knowledge graph
+          Live biomedical entity extraction + relation mining + 3D knowledge graph
         </p>
       </div>
 
@@ -222,7 +263,7 @@ export default function Nlp() {
 
         <Card className="rounded-none border-border bg-card">
           <CardHeader>
-            <CardTitle className="text-sm uppercase">PubMed Search</CardTitle>
+            <CardTitle className="text-sm uppercase">PubMed Search — click any paper to open it</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex gap-2">
@@ -243,20 +284,45 @@ export default function Nlp() {
             </div>
             <div className="space-y-2 max-h-56 overflow-auto">
               {papersLoading && <Skeleton className="h-32 rounded-none" />}
-              {(papersData?.papers ?? []).length === 0 && paperSearchTerm && !papersLoading && (
+              {papers.length === 0 && paperSearchTerm && !papersLoading && (
                 <p className="text-xs text-muted-foreground font-mono">No papers found.</p>
               )}
-              {(papersData?.papers ?? []).map((p) => p && (
+              {papers.map((p) => (
                 <div
                   key={p.pmid}
-                  className="border-b border-border py-2 cursor-pointer hover:bg-white/5"
+                  className="border-b border-border py-2 hover:bg-white/5 cursor-pointer"
                   onClick={() => { setPmid(p.pmid); setText(""); }}
                 >
-                  <p className="text-xs font-mono font-bold truncate">{p.title}</p>
-                  <div className="flex gap-2 mt-0.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs font-mono font-bold truncate">{p.title}</p>
+                    <a
+                      href={pubmedUrlFor(p)}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-muted-foreground hover:text-white flex items-center gap-0.5 shrink-0 text-xs"
+                    >
+                      PubMed <ExternalLink className="h-2.5 w-2.5" />
+                    </a>
+                  </div>
+                  <div className="flex gap-2 mt-0.5 flex-wrap">
                     <span className="text-xs text-muted-foreground">{p.year}</span>
                     <span className="text-xs text-muted-foreground truncate">{p.authors?.[0]}</span>
-                    <span className="text-xs font-mono text-muted-foreground">PMID:{p.pmid}</span>
+                    {p.journal && <span className="text-xs text-muted-foreground truncate italic">{p.journal}</span>}
+                    <a
+                      href={pubmedUrlFor(p)}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-xs font-mono text-muted-foreground hover:text-white underline"
+                    >
+                      PMID:{p.pmid}
+                    </a>
+                    {p.doiUrl && (
+                      <a href={p.doiUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs font-mono text-muted-foreground hover:text-white underline">
+                        DOI
+                      </a>
+                    )}
                   </div>
                 </div>
               ))}
@@ -265,65 +331,89 @@ export default function Nlp() {
         </Card>
       </div>
 
+      {paperYears.length > 1 && (
+        <ChartCard title="Publication Timeline" subtitle={`papers per year — "${paperSearchTerm}"`}>
+          <TimelineChart data={paperYears} xKey="date" />
+        </ChartCard>
+      )}
+
       {extractMutation.isPending && !extractResult && (
         <Skeleton className="h-48 rounded-none" />
       )}
 
       {extractResult && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="rounded-none border-border bg-card">
-            <CardHeader>
-              <CardTitle className="text-sm uppercase">
-                Extracted Entities ({extractResult.entities.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap gap-1">
-                {entityTypes.map(([type, count]) => (
-                  <Badge
-                    key={type}
-                    style={{ backgroundColor: ENTITY_COLORS[type] ?? "#fff", color: "#000" }}
-                    className="rounded-none text-xs font-mono"
-                  >
-                    {type}: {count}
-                  </Badge>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-1.5 max-h-48 overflow-auto">
-                {extractResult.entities.map((e) => (
-                  <span
-                    key={e.id}
-                    className="border border-white/20 px-2 py-0.5 text-xs font-mono"
-                    style={{ borderColor: ENTITY_COLORS[e.type] ?? "#fff" }}
-                    title={`${e.type}${e.normalizedId ? ` | ${e.normalizedId}` : ""} | conf: ${((e.confidence ?? 0) * 100).toFixed(0)}%`}
-                  >
-                    {e.text}
-                  </span>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-none border-border bg-card">
-            <CardHeader>
-              <CardTitle className="text-sm uppercase">
-                Relations ({extractResult.relations.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-1 max-h-64 overflow-auto font-mono text-xs">
-                {extractResult.relations.slice(0, 30).map((r, i) => (
-                  <div key={i} className="flex items-center gap-2 border-b border-border py-1 flex-wrap">
-                    <span className="font-bold">{r.subject}</span>
-                    <span className="text-muted-foreground">{r.predicate}</span>
-                    <span className="font-bold">{r.object}</span>
-                    <span className="text-muted-foreground ml-auto">{(r.confidence * 100).toFixed(0)}%</span>
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <ChartCard title="Entity Type Breakdown" subtitle={`${extractResult.entities.length} entities extracted`}>
+              <CountPieChart data={entityTypes} />
+            </ChartCard>
+            <ChartCard title="Top Mentioned Entities" subtitle="mentions per entity">
+              <div className="space-y-1 max-h-[200px] overflow-auto">
+                {topEntities.map((e) => (
+                  <div key={e.key} className="flex items-center justify-between border-b border-border py-1 font-mono text-xs">
+                    <span className="truncate">{e.key}</span>
+                    <span className="text-muted-foreground">{e.count}×</span>
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        </div>
+            </ChartCard>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card className="rounded-none border-border bg-card">
+              <CardHeader>
+                <CardTitle className="text-sm uppercase">
+                  Extracted Entities ({extractResult.entities.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-wrap gap-1">
+                  {entityTypes.map((t) => (
+                    <Badge
+                      key={t.key}
+                      style={{ backgroundColor: ENTITY_COLORS[t.key] ?? "#fff", color: "#000" }}
+                      className="rounded-none text-xs font-mono"
+                    >
+                      {t.key}: {t.count}
+                    </Badge>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-1.5 max-h-48 overflow-auto">
+                  {extractResult.entities.map((e) => (
+                    <span
+                      key={e.id}
+                      className="border border-white/20 px-2 py-0.5 text-xs font-mono"
+                      style={{ borderColor: ENTITY_COLORS[e.type] ?? "#fff" }}
+                      title={`${e.type}${e.normalizedId ? ` | ${e.normalizedId}` : ""} | conf: ${((e.confidence ?? 0) * 100).toFixed(0)}%`}
+                    >
+                      {e.text}
+                    </span>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-none border-border bg-card">
+              <CardHeader>
+                <CardTitle className="text-sm uppercase">
+                  Relations ({extractResult.relations.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1 max-h-64 overflow-auto font-mono text-xs">
+                  {extractResult.relations.slice(0, 30).map((r, i) => (
+                    <div key={i} className="flex items-center gap-2 border-b border-border py-1 flex-wrap">
+                      <span className="font-bold">{r.subject}</span>
+                      <span className="text-muted-foreground">{r.predicate}</span>
+                      <span className="font-bold">{r.object}</span>
+                      <span className="text-muted-foreground ml-auto">{(r.confidence * 100).toFixed(0)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </>
       )}
 
       <Card className="rounded-none border-border bg-card">

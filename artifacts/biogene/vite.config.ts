@@ -44,6 +44,16 @@ export default defineConfig({
     strictPort: true,
     host: "0.0.0.0",
     allowedHosts: true,
+    // Proxy /api to the local API server so the frontend's relative
+    // /api calls work in dev (production uses Vercel rewrites instead).
+    proxy: process.env.API_PROXY === "off"
+      ? undefined
+      : {
+          "/api": {
+            target: process.env.API_URL ?? "http://localhost:8080",
+            changeOrigin: false,
+          },
+        },
     fs: {
       strict: true,
     },
